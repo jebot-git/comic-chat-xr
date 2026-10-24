@@ -148,8 +148,9 @@ these views are not late-latched at the headset's predicted display time.
 
 Each original backdrop is split into **far (7 m), middle (4.6 m), and near
 (3.2 m)** image planes. Editable polygons/ellipses in `backdrop-layers.json`
-assign the original sky, landscape, architecture, furniture and foreground
-regions to these depths. The planes align to the original square composition
+assign complete sky, landscape, architecture, furniture and foreground
+objects to these depths. See [authored backdrop depth](BACKDROP_DEPTH.md) for
+the per-scene decisions and semantic regression landmarks. The planes align to the original square composition
 at nominal eye height (1.6 m), with overscan for head movement. Their different
 depths produce parallax. There is no spherical wrap or rear panorama seam.
 

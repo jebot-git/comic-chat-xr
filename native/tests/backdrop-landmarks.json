@@ -1,0 +1,680 @@
+{
+  "pastoral": [
+    {
+      "pixel": [
+        110,
+        20
+      ],
+      "layer": 1,
+      "object": "arch crown"
+    },
+    {
+      "pixel": [
+        35,
+        95
+      ],
+      "layer": 1,
+      "object": "left doorway jamb"
+    },
+    {
+      "pixel": [
+        115,
+        89
+      ],
+      "layer": 1,
+      "object": "right doorway jamb"
+    },
+    {
+      "pixel": [
+        75,
+        78
+      ],
+      "layer": 0,
+      "object": "recessed opening"
+    },
+    {
+      "pixel": [
+        145,
+        163
+      ],
+      "layer": 1,
+      "object": "stair treads"
+    },
+    {
+      "pixel": [
+        159,
+        211
+      ],
+      "layer": 1,
+      "object": "stair side rail"
+    },
+    {
+      "pixel": [
+        236,
+        205
+      ],
+      "layer": 1,
+      "object": "complete front newel post"
+    },
+    {
+      "pixel": [
+        190,
+        109
+      ],
+      "layer": 0,
+      "object": "distant tree trunk"
+    },
+    {
+      "pixel": [
+        157,
+        101
+      ],
+      "layer": 0,
+      "object": "distant wall"
+    },
+    {
+      "pixel": [
+        58,
+        139
+      ],
+      "layer": 2,
+      "object": "foreground foliage"
+    },
+    {
+      "pixel": [
+        225,
+        254
+      ],
+      "layer": 2,
+      "object": "foreground shrub"
+    },
+    {
+      "pixel": [
+        200,
+        300
+      ],
+      "layer": 2,
+      "object": "foreground meadow"
+    }
+  ],
+  "field": [
+    {
+      "pixel": [
+        15,
+        15
+      ],
+      "layer": 2,
+      "object": "architecture crown"
+    },
+    {
+      "pixel": [
+        64,
+        146
+      ],
+      "layer": 2,
+      "object": "architecture lower side"
+    },
+    {
+      "pixel": [
+        25,
+        195
+      ],
+      "layer": 2,
+      "object": "architecture base"
+    },
+    {
+      "pixel": [
+        20,
+        218
+      ],
+      "layer": 2,
+      "object": "foreground grass at architecture base"
+    },
+    {
+      "pixel": [
+        85,
+        193
+      ],
+      "layer": 2,
+      "object": "foreground shrub whole crown"
+    },
+    {
+      "pixel": [
+        112,
+        216
+      ],
+      "layer": 2,
+      "object": "same foreground shrub base"
+    },
+    {
+      "pixel": [
+        140,
+        181
+      ],
+      "layer": 1,
+      "object": "distant shrub"
+    },
+    {
+      "pixel": [
+        215,
+        163
+      ],
+      "layer": 1,
+      "object": "distant hillside"
+    },
+    {
+      "pixel": [
+        220,
+        90
+      ],
+      "layer": 0,
+      "object": "sky"
+    },
+    {
+      "pixel": [
+        171,
+        290
+      ],
+      "layer": 2,
+      "object": "foreground leaf plant"
+    },
+    {
+      "pixel": [
+        170,
+        310
+      ],
+      "layer": 2,
+      "object": "same plant stem"
+    },
+    {
+      "pixel": [
+        280,
+        301
+      ],
+      "layer": 2,
+      "object": "foreground shrub band"
+    }
+  ],
+  "room": [
+    {
+      "pixel": [
+        230,
+        45
+      ],
+      "layer": 1,
+      "object": "wall"
+    },
+    {
+      "pixel": [
+        150,
+        75
+      ],
+      "layer": 1,
+      "object": "wall"
+    },
+    {
+      "pixel": [
+        150,
+        235
+      ],
+      "layer": 1,
+      "object": "wall"
+    },
+    {
+      "pixel": [
+        110,
+        140
+      ],
+      "layer": 0,
+      "object": "window exterior"
+    },
+    {
+      "pixel": [
+        110,
+        175
+      ],
+      "layer": 0,
+      "object": "window exterior"
+    },
+    {
+      "pixel": [
+        50,
+        205
+      ],
+      "layer": 0,
+      "object": "window exterior"
+    },
+    {
+      "pixel": [
+        265,
+        95
+      ],
+      "layer": 0,
+      "object": "doorway opening"
+    },
+    {
+      "pixel": [
+        266,
+        150
+      ],
+      "layer": 0,
+      "object": "doorway opening"
+    },
+    {
+      "pixel": [
+        266,
+        235
+      ],
+      "layer": 0,
+      "object": "doorway opening"
+    },
+    {
+      "pixel": [
+        266,
+        260
+      ],
+      "layer": 0,
+      "object": "doorway opening"
+    },
+    {
+      "pixel": [
+        30,
+        290
+      ],
+      "layer": 2,
+      "object": "floor"
+    },
+    {
+      "pixel": [
+        150,
+        290
+      ],
+      "layer": 2,
+      "object": "floor"
+    },
+    {
+      "pixel": [
+        300,
+        290
+      ],
+      "layer": 2,
+      "object": "floor"
+    }
+  ],
+  "buckroom": [
+    {
+      "pixel": [
+        75,
+        155
+      ],
+      "layer": 1,
+      "object": "shelf unit"
+    },
+    {
+      "pixel": [
+        72,
+        183
+      ],
+      "layer": 1,
+      "object": "shelf unit"
+    },
+    {
+      "pixel": [
+        110,
+        189
+      ],
+      "layer": 1,
+      "object": "shelf unit"
+    },
+    {
+      "pixel": [
+        151,
+        206
+      ],
+      "layer": 1,
+      "object": "workstation"
+    },
+    {
+      "pixel": [
+        149,
+        229
+      ],
+      "layer": 1,
+      "object": "workstation"
+    },
+    {
+      "pixel": [
+        180,
+        257
+      ],
+      "layer": 1,
+      "object": "workstation"
+    },
+    {
+      "pixel": [
+        183,
+        288
+      ],
+      "layer": 1,
+      "object": "workstation"
+    },
+    {
+      "pixel": [
+        257,
+        179
+      ],
+      "layer": 1,
+      "object": "dresser assembly"
+    },
+    {
+      "pixel": [
+        256,
+        196
+      ],
+      "layer": 1,
+      "object": "dresser assembly"
+    },
+    {
+      "pixel": [
+        236,
+        215
+      ],
+      "layer": 1,
+      "object": "dresser assembly"
+    },
+    {
+      "pixel": [
+        237,
+        277
+      ],
+      "layer": 1,
+      "object": "dresser assembly"
+    },
+    {
+      "pixel": [
+        203,
+        290
+      ],
+      "layer": 1,
+      "object": "dresser assembly"
+    },
+    {
+      "pixel": [
+        118,
+        241
+      ],
+      "layer": 2,
+      "object": "swivel chair"
+    },
+    {
+      "pixel": [
+        128,
+        265
+      ],
+      "layer": 2,
+      "object": "swivel chair"
+    },
+    {
+      "pixel": [
+        124,
+        286
+      ],
+      "layer": 2,
+      "object": "swivel chair"
+    },
+    {
+      "pixel": [
+        145,
+        293
+      ],
+      "layer": 2,
+      "object": "swivel chair"
+    },
+    {
+      "pixel": [
+        266,
+        286
+      ],
+      "layer": 2,
+      "object": "foreground platform"
+    },
+    {
+      "pixel": [
+        266,
+        302
+      ],
+      "layer": 2,
+      "object": "foreground platform"
+    },
+    {
+      "pixel": [
+        266,
+        310
+      ],
+      "layer": 2,
+      "object": "foreground platform"
+    },
+    {
+      "pixel": [
+        100,
+        325
+      ],
+      "layer": 2,
+      "object": "floor"
+    },
+    {
+      "pixel": [
+        300,
+        325
+      ],
+      "layer": 2,
+      "object": "floor"
+    },
+    {
+      "pixel": [
+        113,
+        138
+      ],
+      "layer": 1,
+      "object": "globe"
+    },
+    {
+      "pixel": [
+        126,
+        128
+      ],
+      "layer": 1,
+      "object": "globe"
+    },
+    {
+      "pixel": [
+        138,
+        140
+      ],
+      "layer": 1,
+      "object": "globe"
+    },
+    {
+      "pixel": [
+        5,
+        288
+      ],
+      "layer": 2,
+      "object": "sofa"
+    },
+    {
+      "pixel": [
+        50,
+        303
+      ],
+      "layer": 2,
+      "object": "sofa"
+    },
+    {
+      "pixel": [
+        44,
+        274
+      ],
+      "layer": 2,
+      "object": "sofa"
+    },
+    {
+      "pixel": [
+        330,
+        200
+      ],
+      "layer": 1,
+      "object": "cabinet at right"
+    },
+    {
+      "pixel": [
+        325,
+        240
+      ],
+      "layer": 1,
+      "object": "cabinet at right"
+    },
+    {
+      "pixel": [
+        340,
+        280
+      ],
+      "layer": 1,
+      "object": "cabinet at right"
+    },
+    {
+      "pixel": [
+        190,
+        90
+      ],
+      "layer": 0,
+      "object": "wall art stays with wall"
+    },
+    {
+      "pixel": [
+        60,
+        235
+      ],
+      "layer": 0,
+      "object": "wall art stays with wall"
+    }
+  ],
+  "space": [
+    {
+      "pixel": [
+        50,
+        110
+      ],
+      "layer": 1,
+      "object": "left-yellow-planet"
+    },
+    {
+      "pixel": [
+        294,
+        80
+      ],
+      "layer": 1,
+      "object": "right-yellow-planet"
+    },
+    {
+      "pixel": [
+        225,
+        68
+      ],
+      "layer": 0,
+      "object": "blue-moon-behind-yellow"
+    },
+    {
+      "pixel": [
+        141,
+        85
+      ],
+      "layer": 0,
+      "object": "small-green-planet"
+    },
+    {
+      "pixel": [
+        20,
+        265
+      ],
+      "layer": 1,
+      "object": "lower-left-planet"
+    },
+    {
+      "pixel": [
+        274,
+        199
+      ],
+      "layer": 2,
+      "object": "foreground-spacecraft"
+    },
+    {
+      "pixel": [
+        331,
+        270
+      ],
+      "layer": 2,
+      "object": "right-terrain-spire"
+    },
+    {
+      "pixel": [
+        257,
+        269
+      ],
+      "layer": 2,
+      "object": "mountain-peak"
+    },
+    {
+      "pixel": [
+        302,
+        337
+      ],
+      "layer": 2,
+      "object": "foreground-rock"
+    },
+    {
+      "pixel": [
+        200,
+        224
+      ],
+      "layer": 0,
+      "object": "sky"
+    }
+  ],
+  "clouds": [
+    {
+      "pixel": [
+        100,
+        100
+      ],
+      "layer": 0,
+      "object": "continuous cloud photograph"
+    },
+    {
+      "pixel": [
+        300,
+        400
+      ],
+      "layer": 0,
+      "object": "continuous cloud photograph"
+    }
+  ],
+  "yellow": [
+    {
+      "pixel": [
+        30,
+        30
+      ],
+      "layer": 0,
+      "object": "uniform field"
+    },
+    {
+      "pixel": [
+        250,
+        250
+      ],
+      "layer": 0,
+      "object": "uniform field"
+    }
+  ]
+}

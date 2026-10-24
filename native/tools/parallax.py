@@ -8,18 +8,24 @@ when the head moves. No new artwork or remote/generative service is used.
 from collections import deque
 from PIL import Image, ImageDraw
 
-def split_layers(image, regions, definitions):
-    source=image.convert('RGBA'); w,h=source.size
+def region_labels(size, regions, count):
+    """Rasterize authored whole-object depth ownership in source coordinates."""
+    w,h=size
     labels=Image.new('L',(w,h));draw=ImageDraw.Draw(labels)
     for region in regions:
         layer=region['layer']
-        if layer not in range(len(definitions)): raise ValueError('Unknown parallax layer')
+        if layer not in range(count): raise ValueError('Unknown parallax layer')
         if 'polygon' in region:
             points=[(round(x*(w-1)),round(y*(h-1))) for x,y in region['polygon']]
             draw.polygon(points,fill=layer)
         elif 'ellipse' in region:
             x0,y0,x1,y1=region['ellipse'];draw.ellipse((round(x0*(w-1)),round(y0*(h-1)),round(x1*(w-1)),round(y1*(h-1))),fill=layer)
         else: raise ValueError('Unknown parallax region shape')
+    return labels
+
+def split_layers(image, regions, definitions):
+    source=image.convert('RGBA'); w,h=source.size
+    labels=region_labels((w,h),regions,len(definitions))
     owners=list(labels.get_flattened_data());pixels=list(source.get_flattened_data())
     result=[]
     for index,definition in enumerate(definitions):

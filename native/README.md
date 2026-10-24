@@ -49,6 +49,13 @@ whisper and action modes have distinct presentation. DomeD receives the universa
 DomeD appearance and bitmap fonts update live. Wayland is the native path; X11
 is available as a fallback. Bitmap image uploads are cached as OpenGL textures.
 
+**Text view** is a live server/channel output stream: registration and MOTD,
+notices, errors, joins/parts, topics, and incoming/outgoing chat. It remains
+independent of comic pagination and rendering changes, with up to 2 MiB of
+session output retained. Selecting Text view directly from 3D mode opens the
+stream without a separate mode-switch step. Comic transcript files still
+contain comic history rather than the full server log.
+
 Choose **Connect**, enter a server and nickname, and optionally a channel. Leave the channel blank
 to register with the server alone, then use `/join #channel` when ready. TLS with
 certificate verification defaults to port 6697. Plain IRC is an explicit option

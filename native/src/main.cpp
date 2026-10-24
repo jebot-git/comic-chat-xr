@@ -6,6 +6,7 @@
 #include "domed.h"
 #include "gltf-render.h"
 #include "gpu-window.h"
+#include "irc-output.h"
 #include "irc.h"
 #include "model-loader.h"
 #include "model-xr.h"
@@ -791,6 +792,17 @@ public:
     glPopAttrib();
   }
 };
+class OutputView : public Fl_Text_Display {
+public:
+  using Fl_Text_Display::Fl_Text_Display;
+  bool followsTail() const {
+    return mTopLineNum + mNVisibleLines >= mNBufferLines + 1;
+  }
+  void showTail() {
+    insert_position(buffer()->length());
+    show_insert_position();
+  }
+};
 class Window : public dx::GpuWindow {
   Options opt;
   Art art;
@@ -810,7 +822,7 @@ class Window : public dx::GpuWindow {
   Fl_Choice character{450, 34, 160, 30, "Character"},
       backdrop{712, 34, 160, 30, "Backdrop"};
   ComicPage page{8, 74, 870, 610};
-  Fl_Text_Display text{8, 74, 870, 610};
+  OutputView text{8, 74, 870, 610};
   SceneView scene{8, 74, 870, 610};
   Fl_Text_Buffer transcript;
   Fl_Hold_Browser members{888, 74, 224, 200};
@@ -847,7 +859,38 @@ class Window : public dx::GpuWindow {
   std::string currentFont() {
     return dx::selected_font.family + " " + dx::selected_font.style;
   }
-  void info(const std::string &s) { status.value(s.c_str()); }
+  void appendText(const std::string &s) {
+    if (s.empty())
+      return;
+    bool follow = text.followsTail();
+    auto line = plain(s) + "\n";
+    transcript.append(line.c_str());
+    constexpr int limit = 2 * 1024 * 1024;
+    if (transcript.length() > limit)
+      transcript.remove(0,
+                        transcript.line_end(transcript.length() - limit) + 1);
+    if (follow)
+      text.showTail();
+  }
+  void info(const std::string &s) {
+    if (std::string(status.value() ? status.value() : "") != s)
+      appendText("[status] " + s);
+    status.value(s.c_str());
+  }
+  void seedText() {
+    std::string all;
+    for (const auto &panel : doc.panels)
+      for (const auto &m : panel.messages) {
+        if (m.continuation) {
+          if (!all.empty() && all.back() == '\n')
+            all.pop_back();
+          all += m.text + "\n";
+        } else
+          all += m.nick + ": " + m.text + "\n";
+      }
+    transcript.text(all.c_str());
+    text.showTail();
+  }
   void updatePreview() {
     auto em = selected;
     if (em.emotion == 0)
@@ -868,17 +911,6 @@ class Window : public dx::GpuWindow {
     doc.font = currentFont();
     doc.fontSize = std::clamp(dx::size, 14, 20);
     page.update(doc, art, currentFont(), std::clamp(dx::size, 14, 20));
-    std::string all;
-    for (auto &p : doc.panels)
-      for (auto &m : p.messages) {
-        if (m.continuation) {
-          if (!all.empty() && all.back() == '\n')
-            all.pop_back();
-          all += m.text + "\n";
-        } else
-          all += m.nick + ": " + m.text + "\n";
-      }
-    transcript.text(all.c_str());
     updateMembers();
     requestScene();
   }
@@ -900,6 +932,7 @@ class Window : public dx::GpuWindow {
   }
   void process(const std::string &line) {
     auto p = parseIrc(line);
+    appendText(ircOutput(p));
     auto nick = p.prefix.substr(0, p.prefix.find('!'));
     auto key = casefold(nick);
     if (p.command == "001") {
@@ -1154,6 +1187,7 @@ class Window : public dx::GpuWindow {
            "is full.");
       return;
     }
+    appendText(ircOutput(parseIrc(":" + doc.nick + " " + wire)));
     doc.add(m);
     sync();
     input.value("");
@@ -1164,12 +1198,12 @@ class Window : public dx::GpuWindow {
       page.hide();
       text.hide();
       scene.show();
-      textButton.deactivate();
     } else {
       scene.hide();
       if (useText) {
         page.hide();
         text.show();
+        text.showTail();
       } else {
         text.hide();
         page.show();
@@ -1181,7 +1215,8 @@ class Window : public dx::GpuWindow {
       xrButton.activate();
     else
       xrButton.deactivate();
-    textButton.label(useText ? "Comic view" : "Text view");
+    textButton.activate();
+    textButton.label(!xrView && useText ? "Comic view" : "Text view");
     redraw();
   }
   void action(Fl_Widget *w) {
@@ -1219,7 +1254,12 @@ class Window : public dx::GpuWindow {
       xrView = xrPresentation && enable3D;
       updateView();
     } else if (w == &textButton) {
-      useText = !useText;
+      if (xrView) {
+        enable3D = false;
+        xrView = false;
+        useText = true;
+      } else
+        useText = !useText;
       updateView();
     } else if (w == &menu) {
       char path[256];
@@ -1277,6 +1317,7 @@ class Window : public dx::GpuWindow {
               art.pose(m.character, m.expression);
           }
           doc = std::move(candidate);
+          seedText();
           sync();
         }
       } else if (cmd == "Help/About")
@@ -1364,6 +1405,10 @@ class Window : public dx::GpuWindow {
           }
         snap.save(opt.capture);
         auto snapshot = doc.json();
+        std::unique_ptr<char, decltype(&std::free)> outputText(
+            transcript.text(), &std::free);
+        snapshot["text_output"] =
+            outputText ? std::string(outputText.get()) : std::string();
         auto m = domeMode.snapshot();
         snapshot["presentation"] = {
             {"launch_realm", opt.resolvedRealm},
@@ -1458,7 +1503,8 @@ public:
                                             &backdrop, &expression})
       w->callback(callback, this);
     input.when(FL_WHEN_ENTER_KEY_ALWAYS);
-    input.tooltip("Enter sends; /me action, /think thought, /nick name, /quit");
+    input.tooltip("Enter sends; /join #channel, /me action, /think thought, "
+                  "/nick name, /quit");
     page.onSelect([this](int) { requestScene(); });
     wheel.onChange([this](int em, float intensity) {
       selected.emotion = em;
@@ -1470,6 +1516,7 @@ public:
     desktop = std::make_unique<DesktopMenu>(*this, menu);
     dx::style(this);
     updatePreview();
+    seedText();
     sync();
     updateView();
     info("Disconnected — Connect to an IRC server, or open a saved comic "

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "comic.h"
 #include "gltf-model.h"
+#include "irc-output.h"
 #include "scene-placement.h"
 #include "window-stereo.h"
 #include <cassert>
@@ -37,6 +38,28 @@ int main(int argc, char **argv) {
     }
     assert(rejected);
   }
+  assert(ircOutput(parseIrc(":server 001 Guest :Welcome")) ==
+         "[server] 001 Welcome");
+  assert(ircOutput(parseIrc(":server 372 Guest :Message of the day")) ==
+         "[server] 372 Message of the day");
+  assert(ircOutput(parseIrc(":server NOTICE AUTH :Checking your hostname")) ==
+         "[server] -server- Checking your hostname");
+  assert(ircOutput(parseIrc(":Anna!a@host NOTICE #room :Channel notice")) ==
+         "[#room] -Anna- Channel notice");
+  assert(ircOutput(parseIrc(":Anna!a@host JOIN :#room")) ==
+         "[#room] * Anna joined");
+  assert(ircOutput(parseIrc(":Anna!a@host PART #room :Leaving")) ==
+         "[#room] * Anna left (Leaving)");
+  assert(ircOutput(parseIrc(":Anna!a@host TOPIC #room :Topic text")) ==
+         "[#room] * Anna set topic: Topic text");
+  assert(
+      ircOutput(parseIrc(":Anna!a@host PRIVMSG #room :(#G099E119RM1) Hello")) ==
+      "[#room] Anna: Hello");
+  assert(ircOutput(parseIrc(":Anna!a@host PRIVMSG #room :\1"
+                            "ACTION waves\1")) == "[#room] * Anna waves");
+  assert(ircOutput(parseIrc("PING :token")).empty());
+  assert(ircOutput(parseIrc(":Anna!a@host PRIVMSG #room :# Appears as anna"))
+             .empty());
   Art art(argv[1]);
   fs::path qa = argv[2];
   fs::create_directories(qa);

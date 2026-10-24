@@ -27,10 +27,11 @@ try:
                         line=file.readline()
                         if not line:break
                         line=line.decode().rstrip('\r\n');received.append(line)
-                        if line.startswith('USER '):file.write(b':test 001 ComicXR :Welcome\r\n')
+                        if line.startswith('USER '):file.write(b':test 001 ComicXR :Welcome\r\n:test NOTICE AUTH :Server connection notice\r\n:test 372 ComicXR :Server MOTD before joining\r\n')
                         if line=='JOIN #comicchat':
                             file.write(b':ComicXR!me@local JOIN :#comicchat\r\n:test 353 ComicXR = #comicchat :@ComicXR Anna\r\n:Anna!a@local PRIVMSG #comicchat :# Appears as anna\r\n')
                             file.write(':Anna!a@local PRIVMSG #comicchat :(#G099E119RM1) Hello from 世界\r\n'.encode())
+                            file.write(b':test 332 ComicXR #comicchat :Our channel topic\r\n:test NOTICE #comicchat :Channel announcement\r\n:Bob!b@local JOIN :#comicchat\r\n:Bob!b@local PART #comicchat :Leaving now\r\n')
             except Exception as error:errors.append(str(error))
         thread=threading.Thread(target=server,daemon=True);thread.start()
         r,w=os.pipe();xvfb=subprocess.Popen(['Xvfb','-displayfd',str(w),'-screen','0','1400x1000x24','-nolisten','tcp'],pass_fds=(w,),stderr=subprocess.DEVNULL);children.append(xvfb);os.close(w)
@@ -59,7 +60,7 @@ try:
             wait(lambda:any('Appears as' in line for line in received))
             click(mx+1043,my+560);fill(mx+160,my+720,'Hello native cutouts');xdo('key','Return')
             wait(lambda:any('Hello native cutouts' in line for line in received))
-            xdo('key','ctrl+t');time.sleep(.15);xdo('key','ctrl+t')
+            xdo('key','ctrl+t');time.sleep(.15);xdo('key','ctrl+t');time.sleep(.15);xdo('key','ctrl+t')
             app.wait(timeout=25)
         assert app.returncode==0,(out/'app.log').read_text()
         listener.close()
@@ -67,6 +68,12 @@ try:
         assert any(m['character']=='anna' and '世界' in m['text'] and m['cooked'] for m in messages),messages
         assert any(m['nick']=='ComicXR' and m['text']=='Hello native cutouts' and m['emotion']!=9 for m in messages),messages
         assert any('(#G' in line and 'Hello native cutouts' in line for line in received),received
+        output=state['text_output']
+        for expected in ['Server connection notice','Server MOTD before joining','Our channel topic','Channel announcement','* Bob joined','* Bob left (Leaving now)','Anna: Hello from 世界','ComicXR: Hello native cutouts']:
+            assert expected in output,(expected,output)
+        assert state['presentation']['view']=='text',state['presentation']
+        assert not any('Server MOTD' in m['text'] for m in messages),'Server output must not become speech balloons'
+
         im=Image.open(out/'chat.png').convert('RGB');crop=im.crop((15,240,850,460));assert sum(max(p)<50 for p in crop.get_flattened_data())>5000
         print('PASS Connect dialog, actual IRC JOIN, original avatar announcements and expression annotation, Unicode reception, emotion wheel, Enter sends, GPU pixels and teardown')
 finally:

@@ -154,6 +154,20 @@ try:
         assert toggleState['stereo_transport'] and toggleState['stereo_frames']>5,toggleState
         toggleImage=Image.open(out/'toggle.png').convert('RGB');half=toggleImage.width//2
         assert ImageChops.difference(toggleImage.crop((0,0,half,toggleImage.height)),toggleImage.crop((toggleImage.width-half,0,toggleImage.width,toggleImage.height))).getbbox() is None,'2D mode must reach both eyes identically'
+        textApp=start([exe,'--seconds','3','--capture-ui',out/'text-xr.png'],env,'text-xr')
+        textWindow=wait(lambda:next((w for w in get('/api/state')['scene']['windows'] if w.get('client_pid')==textApp.pid),None))
+        post('/api/action',{'op':'pull_out','id':textWindow['id'],'head':trackingHead})
+        time.sleep(.8)
+        uv=[172/textWindow['desktop']['w'],20/textWindow['desktop']['h']]
+        post('/api/xr-input',{'actions':[],'events':[{'kind':'motion','id':textWindow['id'],'uv':uv},{'kind':'button','button':272,'pressed':True}]})
+        time.sleep(.1)
+        post('/api/xr-input',{'actions':[],'events':[{'kind':'button','button':272,'pressed':False}]})
+        textApp.wait(timeout=15);assert textApp.returncode==0
+        textState=json.loads((out/'text-xr.png.json').read_text())
+        assert textState['presentation']['view']=='text' and textState['presentation']['stereo_transport'],textState
+        assert not textState['presentation']['three_d_enabled'],textState
+        assert 'DomeD: XR mode' in textState['text_output'],textState
+        print('PASS direct Text view access from XR 3D, with live session output and stereo controls',flush=True)
         print('PASS empty-transcript backdrops and real XR button disables 3D persistently with stereo UI intact',flush=True)
         setmode(False)
         restored=start([exe,'--demo','--seconds','1','--capture-ui',out/'restored.png'],env,'restored')

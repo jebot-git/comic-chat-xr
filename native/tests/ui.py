@@ -45,7 +45,7 @@ try:
             if value:xdo('type','--clearmodifiers','--delay',1,value)
             else:xdo('key','BackSpace')
         with (out/'app.log').open('w') as log:
-            app=subprocess.Popen([str(exe),'--seconds','12','--capture-ui',str(out/'chat.png')],env=env,stdout=log,stderr=log);children.append(app)
+            app=subprocess.Popen([str(exe),'--seconds','22','--capture-ui',str(out/'chat.png')],env=env,stdout=log,stderr=log);children.append(app)
             main=wait(lambda:xdo('search','--name','^Comic Chat XR$') if subprocess.run(['xdotool','search','--name','^Comic Chat XR$'],env=env,stdout=subprocess.DEVNULL).returncode==0 else None)
             geometry=dict(line.split('=',1) for line in xdo('getwindowgeometry','--shell',main.splitlines()[-1]).splitlines() if '=' in line)
             mx,my=int(geometry['X']),int(geometry['Y']);time.sleep(.3)
@@ -60,8 +60,14 @@ try:
             wait(lambda:any('Appears as' in line for line in received))
             click(mx+1043,my+560);fill(mx+160,my+720,'Hello native cutouts');xdo('key','Return')
             wait(lambda:any('Hello native cutouts' in line for line in received))
-            xdo('key','ctrl+t');time.sleep(.15);xdo('key','ctrl+t');time.sleep(.15);xdo('key','ctrl+t')
-            app.wait(timeout=25)
+            for command,wire in [('/WHOIS Anna','WHOIS Anna'),('/msg Anna private hello','PRIVMSG Anna :private hello'),('/notice Anna notice hello','NOTICE Anna :notice hello'),('/topic new channel topic','TOPIC #comicchat :new channel topic'),('/away lunch break','AWAY :lunch break'),('/back','AWAY'),('/quote VERSION','VERSION'),('/mode','MODE #comicchat')]:
+                fill(mx+160,my+720,command);xdo('key','Return');wait(lambda:wire in received)
+            fill(mx+160,my+720,'/query Anna');xdo('key','Return')
+            fill(mx+160,my+720,'Private query message');xdo('key','Return')
+            wait(lambda:any(line.startswith('PRIVMSG Anna :') and 'Private query message' in line for line in received))
+            fill(mx+160,my+720,'/query');xdo('key','Return')
+            xdo('key','ctrl+t');time.sleep(.15);xdo('key','ctrl+t')
+            app.wait(timeout=35)
         assert app.returncode==0,(out/'app.log').read_text()
         listener.close()
         state=json.loads((out/'chat.png.json').read_text());messages=[m for p in state['panels'] for m in p['messages']]

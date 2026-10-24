@@ -2,6 +2,7 @@
 #include "comic.h"
 #include "gltf-model.h"
 #include "irc-output.h"
+#include "irc-command.h"
 #include "scene-placement.h"
 #include "window-stereo.h"
 #include <cassert>
@@ -12,6 +13,17 @@
 int main(int argc, char **argv) {
   using namespace comic;
   assert(argc == 3);
+  assert(inputCommand("//literal").args == "/literal");
+  assert(inputCommand("/WHOIS   Anna").name == "whois");
+  assert(inputCommand("/WHOIS   Anna").args == "Anna");
+  assert(inputCommand("/away").args.empty());
+  assert(protocolCommand("quote") == "RAW");
+  assert(protocolCommand("leave") == "PART");
+  assert(protocolCommand("unknown").empty());
+  assert(ircToken("#世界"));
+  assert(!ircToken("nick :injection"));
+  assert(!ircToken(std::string("nick\0bad", 8)));
+
   {
     using namespace fsv::gltf;
     CylinderSurface cylinder;

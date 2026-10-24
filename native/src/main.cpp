@@ -7,6 +7,7 @@
 #include "gltf-render.h"
 #include "gpu-window.h"
 #include "irc-output.h"
+#include "irc-command.h"
 #include "irc.h"
 #include "model-loader.h"
 #include "model-xr.h"
@@ -838,6 +839,7 @@ class Window : public dx::GpuWindow {
   Expression selected;
   fs::path tempDir, scenePath, exportPending;
   bool registered = false;
+  std::string queryTarget;
   uint64_t fontRevision = 0;
   size_t stateSerial = 0;
   bool useText = false;
@@ -1075,7 +1077,7 @@ class Window : public dx::GpuWindow {
       return {};
     return chooser.filename();
   }
-  void connectDialog() {
+  void connectDialog(const std::string &server = "") {
     dx::GpuWindow dialog(520, 334, "Connect to IRC");
     Fl_Input host(118, 20, 380, 30, "Server"),
         nick(118, 60, 380, 30, "Nickname"),
@@ -1087,7 +1089,7 @@ class Window : public dx::GpuWindow {
     Fl_Box explain(20, 184, 478, 28, "TLS verifies the server certificate.");
     Fl_Button connect(280, 278, 104, 34, "Connect"),
         cancel(394, 278, 104, 34, "Cancel");
-    host.value("irc.libera.chat");
+    host.value(server.empty() ? "irc.libera.chat" : server.c_str());
     nick.value(doc.nick.c_str());
     channel.value(doc.channel.c_str());
     channel.tooltip(
@@ -1129,59 +1131,193 @@ class Window : public dx::GpuWindow {
     std::string value = input.value();
     if (value.empty())
       return;
+    auto command = inputCommand(value);
+    auto name = command.name;
+    auto args = command.args;
+    auto done = [&] {
+      input.value("");
+      input.take_focus();
+    };
+    if (name == "help") {
+      info("Commands: /join #channel [key], /part [#channel] [reason], /msg "
+           "nick text, /query nick, /notice target text, /me action, /think "
+           "text, /say text, /nick nick, /topic [#channel] [text], /mode, "
+           "/names, /list, /who, /whois, /whowas, /invite, /kick nick "
+           "[reason], /away [text], /back, /raw, /quit [reason], /disconnect, "
+           "/connect, /clear. Use // for a literal slash.");
+      done();
+      return;
+    }
+    if (name == "clear") {
+      transcript.text("");
+      done();
+      return;
+    }
+    if (name == "connect" || name == "server") {
+      if (!args.empty() && !ircToken(args)) {
+        info("Use /server hostname; choose port and TLS in the dialog.");
+        return;
+      }
+      connectDialog(args);
+      done();
+      return;
+    }
+    if (name == "quit" || name == "disconnect") {
+      // Queue QUIT rather than closing the socket before the worker can send
+      // it.
+      if (irc.connected() && name == "quit")
+        irc.send("QUIT :" + (args.empty() ? "Leaving" : args));
+      else
+        irc.disconnect();
+      done();
+      return;
+    }
     if (!irc.connected() || !registered) {
       info("Connect to IRC before sending a message.");
       return;
     }
-    if (value == "/quit") {
-      irc.disconnect();
-      info("Disconnected");
+    auto protocol = protocolCommand(name);
+    auto transmit = [&](const std::string &wire) {
+      if (!irc.send(wire)) {
+        info("Command could not be sent: IRC lines must fit 510 bytes and "
+             "contain no line breaks.");
+        return false;
+      }
+      done();
+      return true;
+    };
+    auto target = queryTarget.empty() ? doc.channel : queryTarget;
+    if (name == "back") {
+      transmit("AWAY");
       return;
     }
-    if (value.rfind("/nick ", 0) == 0) {
-      if (!irc.send("NICK " + value.substr(6)))
-        info("Nickname could not be sent");
-      else
-        input.value("");
+    if (protocol == "QUERY") {
+      if (!ircToken(args)) {
+        info("Use /query nickname (or /query with no argument to return to the "
+             "channel).");
+        if (!args.empty())
+          return;
+      }
+      queryTarget = args;
+      enable3D = false;
+      xrView = false;
+      useText = true;
+      info(args.empty() ? "Messages target " + doc.channel
+                        : "Messages target " + args);
+      updateView();
+      done();
       return;
     }
-    if (value.rfind("/join ", 0) == 0) {
-      auto channel = value.substr(6);
-      if (channel.empty() || (channel[0] != '#' && channel[0] != '&') ||
-          channel.find_first_of(" \r\n,:\0", 0, 6) != std::string::npos ||
-          channel.size() > 100) {
-        info("Use /join #channel with a valid channel name.");
+    if (protocol == "MSG" || protocol == "NOTICE") {
+      auto split = args.find(' ');
+      if (split == std::string::npos || !ircToken(args.substr(0, split)) ||
+          split + 1 == args.size()) {
+        info("Use /msg nickname text or /notice target text.");
         return;
       }
-      if (irc.send("JOIN " + channel)) {
+      auto wire = (protocol == "MSG" ? "PRIVMSG " : "NOTICE ") +
+                  args.substr(0, split) + " :" + args.substr(split + 1);
+      if (transmit(wire))
+        appendText(ircOutput(parseIrc(":" + doc.nick + " " + wire)));
+      return;
+    }
+    if (protocol == "JOIN") {
+      auto split = args.find(' ');
+      auto channel = args.substr(0, split);
+      if (!ircToken(channel) || (channel[0] != '#' && channel[0] != '&')) {
+        info("Use /join #channel [key].");
+        return;
+      }
+      if (transmit("JOIN " + args)) {
         doc.channel = channel;
+        queryTarget.clear();
         users.clear();
         operators.clear();
         updateMembers();
-        input.value("");
       }
       return;
     }
-    if (doc.channel.empty()) {
-      info("Join a channel with /join #channel before sending chat messages.");
+    if (protocol == "PART" || protocol == "TOPIC" || protocol == "KICK") {
+      auto channel = doc.channel;
+      if (!args.empty() && (args[0] == '#' || args[0] == '&')) {
+        auto split = args.find(' ');
+        channel = args.substr(0, split);
+        args = split == std::string::npos ? "" : args.substr(split + 1);
+      }
+      if (channel.empty()) {
+        info("Specify a channel or join one first.");
+        return;
+      }
+      std::string wire = protocol + " " + channel;
+      if (protocol == "KICK") {
+        auto split = args.find(' ');
+        auto nick = args.substr(0, split);
+        if (!ircToken(nick)) {
+          info("Use /kick [#channel] nick [reason].");
+          return;
+        }
+        wire += " " + nick;
+        if (split != std::string::npos)
+          wire += " :" + args.substr(split + 1);
+      } else if (!args.empty())
+        wire += " :" + args;
+      if (transmit(wire) && protocol == "PART" && channel == doc.channel) {
+        doc.channel.clear();
+        users.clear();
+        operators.clear();
+        updateMembers();
+      }
+      return;
+    }
+    if (protocol == "AWAY") {
+      transmit("AWAY" + (args.empty() ? std::string{} : " :" + args));
+      return;
+    }
+    if (protocol == "RAW") {
+      if (args.empty())
+        info("Use /raw IRC-command arguments.");
+      else
+        transmit(args);
+      return;
+    }
+    if (!protocol.empty() && protocol != "ME" && protocol != "THINK") {
+      if (args.empty() && (protocol == "NICK" || protocol == "WHOIS" ||
+                           protocol == "WHOWAS" || protocol == "INVITE")) {
+        info("This command requires an argument. Use /help for commands.");
+        return;
+      }
+      if ((protocol == "MODE" || protocol == "NAMES" || protocol == "WHO") &&
+          args.empty())
+        args = target;
+      if (protocol == "INVITE" && args.find(' ') == std::string::npos &&
+          !doc.channel.empty())
+        args += " " + doc.channel;
+      transmit(protocol + (args.empty() ? "" : " " + args));
+      return;
+    }
+    if (name != "say" && protocol != "ME" && protocol != "THINK") {
+      info("Unknown command. Use /help, or // to send a literal slash.");
+      return;
+    }
+    value = args;
+    if (value.empty()) {
+      info("Enter message text.");
+      return;
+    }
+    if (target.empty()) {
+      info("Use /join #channel or /query nickname before sending chat.");
       return;
     }
     Expression e = selected;
     if (e.emotion == 0)
       e = infer(value);
-    if (value.rfind("/me ", 0) == 0) {
+    if (protocol == "ME")
       e.mode = 5;
-      value = value.substr(4);
-    } else if (value.rfind("/think ", 0) == 0) {
+    if (protocol == "THINK")
       e.mode = 3;
-      value = value.substr(7);
-    } else if (value[0] == '/') {
-      info("Commands: /join, /me, /think, /nick, /quit");
-      return;
-    }
     Message m{doc.nick, value, doc.character, e};
     auto pose = art.pose(m.character, m.expression);
-    auto wire = "PRIVMSG " + doc.channel + " :" + annotate(m, pose);
+    auto wire = "PRIVMSG " + target + " :" + annotate(m, pose);
     if (!irc.send(wire)) {
       info("Message too long (IRC permits 510 bytes per line), or send queue "
            "is full.");

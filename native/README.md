@@ -208,3 +208,19 @@ controller ergonomics still need a headset-user review. Composition layers put
 all DomeD windows above this scene; they do not provide per-pixel depth occlusion
 between independent clients. Hand-refined hidden backdrop regions and the
 complete original comic-layout expert system remain further work.
+
+### IRC input commands
+
+Input supports `/help`, `/join #channel [key]`, `/part [#channel] [reason]`
+(`/leave`), `/msg nick text`, `/notice target text`, `/query nick`, `/nick`,
+`/me` (`/action`), `/think`, `/say`, `/topic [#channel] [text]`, `/mode`,
+`/names`, `/list`, `/who`, `/whois`, `/whowas`, `/invite nick [#channel]`,
+`/kick [#channel] nick [reason]`, `/away [text]`, `/back`, `/raw` (`/quote`),
+`/quit [reason]`, `/disconnect`, `/clear`, and `/connect` (`/server`). Command
+names are case-insensitive. `//text` sends a literal leading slash. `/query nick`
+switches outgoing messages to that user and opens Text view; `/query` returns
+to the selected channel. `/msg` sends once without changing the active target.
+`/server hostname` opens the connection dialog with that host filled in; choose
+port, TLS and credentials there. Raw commands follow IRC parameter syntax.
+The client maintains one selected channel and one optional private target;
+server replies and messages from all channels remain visible in Text view.

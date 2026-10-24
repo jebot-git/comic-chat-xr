@@ -32,6 +32,7 @@ try:
                             file.write(b':ComicXR!me@local JOIN :#comicchat\r\n:test 353 ComicXR = #comicchat :@ComicXR Anna\r\n:Anna!a@local PRIVMSG #comicchat :# Appears as anna\r\n')
                             file.write(':Anna!a@local PRIVMSG #comicchat :(#G099E119RM1) Hello from 世界\r\n'.encode())
                             file.write(b':test 332 ComicXR #comicchat :Our channel topic\r\n:test NOTICE #comicchat :Channel announcement\r\n:Bob!b@local JOIN :#comicchat\r\n:Bob!b@local PART #comicchat :Leaving now\r\n')
+                            file.write(b':Anna!a@local PRIVMSG ComicXR :\x01ACTION private action\x01\r\n:Anna!a@local PRIVMSG ComicXR :(#G099E119RM3) Private thought\r\n:Anna!a@local PRIVMSG ComicXR :Private plain\r\n')
                         if line=='PRIVMSG #field :request backdrop':file.write(b':Anna!a@local PRIVMSG #field :# BDrop2: buckroom.bgb,\r\n')
                         if line=='PRIVMSG #clouds :request backdrop':file.write(b':Anna!a@local PRIVMSG #clouds :# BDrop2: buckroom.bgb,\r\n')
                         if line in ['JOIN #space','JOIN #field','JOIN #yellow','JOIN #clouds']:
@@ -112,6 +113,8 @@ try:
             assert panel['backdrop']==backdrop,(channel,panel)
         assert state['chat_options']=={'send_comic_formatting':False,'manual_backdrop':'pastoral','backdrop':'pastoral','balloon_mode':4},state['chat_options']
         for body,mode in [('Plain whisper',2),('Plain thought',3),('Plain action',5),('Plain shout',4),('Plain speech',1)]:
+            assert any(m['text']==body and m['mode']==mode for m in messages),(body,messages)
+        for body,mode in [('private action',5),('Private thought',3),('Private plain',2)]:
             assert any(m['text']==body and m['mode']==mode for m in messages),(body,messages)
         preferences=json.loads(Path(directory+'/config/comic-chat-xr/preferences.json').read_text())
         assert not preferences['send_comic_formatting'] and preferences['manual_backdrop']=='pastoral' and preferences['balloon_mode']==4,preferences

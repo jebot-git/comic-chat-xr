@@ -1160,7 +1160,7 @@ class Window : public dx::GpuWindow {
                    " :\1VERSION Comic Chat XR (DomeD FLTK)\1");
         return;
       }
-      if (!room)
+      if (!room && em.mode == 1)
         em.mode = 2;
       users.insert(nick);
       doc.add({nick, message, "", em});

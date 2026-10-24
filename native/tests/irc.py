@@ -37,6 +37,28 @@ with tempfile.TemporaryDirectory(prefix='comic-irc-') as folder:
     assert any('Hello 世界' in e.get('line','') for e in events),events
     print('PASS real TCP registration, JOIN, PING/PONG, outbound message, fragmented Unicode and teardown')
 
+# Connecting to a server without a channel must not emit a malformed JOIN.
+with tempfile.TemporaryDirectory(prefix='comic-server-only-') as directory:
+    listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen();listener.settimeout(8)
+    received=[]
+    def server_only():
+        conn,_=listener.accept();conn.settimeout(5)
+        with conn:
+            stream=conn.makefile('rwb',buffering=0)
+            while True:
+                data=stream.readline()
+                if not data:break
+                line=data.decode().rstrip('\r\n');received.append(line)
+                if line.startswith('USER '):stream.write(b':local 001 ComicXR :Welcome\r\nPING :server-only\r\n')
+                if line.startswith('WHOIS ') and 'PONG :server-only' in received:break
+    thread=threading.Thread(target=server_only);thread.start()
+    result=subprocess.run([exe,'--irc-probe','127.0.0.1',str(listener.getsockname()[1]),'--channel','','--no-tls','--seconds','1'],capture_output=True,text=True,timeout=8)
+    thread.join(timeout=6);listener.close()
+    assert result.returncode==0,(result.stderr,received)
+    assert 'WHOIS ComicXR' in received and 'PONG :server-only' in received,received
+    assert not any(line.startswith(('JOIN','PRIVMSG')) for line in received),received
+    print('PASS server-only registration without JOIN or empty chat target')
+
 # The default TLS connection must fail on an untrusted certificate, without
 # sending registration or credentials into a session whose identity is unknown.
 import ssl

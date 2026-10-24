@@ -291,6 +291,36 @@ DomeMode observe() {
           require(norm > .99f && norm < 1.01f, "Invalid window quaternion");
           for (float v : out.windowSize)
             require(std::isfinite(v) && v > 0, "Invalid window extent");
+          if (quad.contains("dome") && !quad["dome"].is_null()) {
+            const auto &d = quad["dome"];
+            out.cylinderPosition =
+                d.at("frame").at("position_m").get<std::array<float, 3>>();
+            out.cylinderOrientation = d.at("frame")
+                                          .at("orientation_xyzw")
+                                          .get<std::array<float, 4>>();
+            out.cylinderRadius = d.at("radius");
+            out.cylinderHorizontal = d.at("horizontal");
+            out.cylinderTop = d.at("top");
+            out.cylinderBottom = d.at("bottom");
+            for (float v : out.cylinderPosition)
+              require(std::isfinite(v), "Invalid cylinder position");
+            float norm = 0;
+            for (float v : out.cylinderOrientation) {
+              require(std::isfinite(v), "Invalid cylinder orientation");
+              norm += v * v;
+            }
+            require(norm > .99f && norm < 1.01f, "Invalid cylinder quaternion");
+            require(std::isfinite(out.cylinderRadius) &&
+                        out.cylinderRadius > .01f &&
+                        std::isfinite(out.cylinderHorizontal) &&
+                        out.cylinderHorizontal > 0 &&
+                        out.cylinderHorizontal < 6.29f &&
+                        std::isfinite(out.cylinderTop) &&
+                        std::isfinite(out.cylinderBottom) &&
+                        out.cylinderTop > out.cylinderBottom,
+                    "Invalid cylinder dimensions");
+            out.hasCylinder = true;
+          }
           out.hasWindowQuad = true;
           break;
         }

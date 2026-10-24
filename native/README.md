@@ -49,7 +49,8 @@ whisper and action modes have distinct presentation. DomeD receives the universa
 DomeD appearance and bitmap fonts update live. Wayland is the native path; X11
 is available as a fallback. Bitmap image uploads are cached as OpenGL textures.
 
-Choose **Connect**, enter a server, nickname and channel, and connect. TLS with
+Choose **Connect**, enter a server and nickname, and optionally a channel. Leave the channel blank
+to register with the server alone, then use `/join #channel` when ready. TLS with
 certificate verification defaults to port 6697. Plain IRC is an explicit option
 for servers that require it. DNS, TLS handshakes and socket I/O stay off the
 FLTK thread. The app does not connect to any server automatically.
@@ -112,7 +113,9 @@ The application window replaces its comic/text view with a native OpenGL 3D
 viewport when DomeD reports a visible XR session and `input_realm=xr`.
 Returning to desktop restores the previously selected comic/text view. Unknown
 or disconnected session state restores the desktop view. History and unsent
-input survive switches. **Reset 3D view** resets the viewport's drag parallax.
+input survive switches. **2D view / 3D view** switches the chat rendering locally
+and keeps that choice across session mode changes. **View → Reset 3D camera**
+resets drag parallax without changing the selected rendering mode.
 The normal GUI never launches a separate OpenXR presenter.
 
 The 3D viewport uses the selected panel's original character poses, cutout
@@ -120,10 +123,14 @@ textures and speech balloons. It fits the square composition within the content
 rectangle and the active lane's height at DomeD's pull-out distance. The front
 plane tracks that distance; depth ratios are preserved so background layers stay
 registered at the reference viewpoint. The compositor places the application's
-surface, including the viewport, with the window. In XR the main window is
-a flat plane at the dome patch’s centre, so the physical screen agrees with
-the renderer’s projection and the compositor’s pointer hit tests. No extra world anchor is
-applied inside the viewport. Drag inside the viewport to inspect depth parallax.
+surface, including the viewport, with the window. The application retains the
+standard dome curvature, lane spacing and focus outset. Each eye's 3D chat image
+is reprojected through the actual cylindrical content rectangle. Controls and
+text keep the compositor's original surface mapping; no whole-window flattening
+or extra world anchor is applied. Drag inside the viewport to inspect depth parallax.
+The selected backdrop is rendered even before the first chat message, in both
+desktop and XR views.
+
 The window uses DomeD's squeezed side-by-side transport under the explicit
 `org.de_xr.ComicChat.Sbs` identity. Each eye gets a separate off-axis projection;
 all controls are duplicated at zero disparity. Rendering and packing use GPU

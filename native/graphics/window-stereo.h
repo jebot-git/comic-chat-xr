@@ -2,6 +2,24 @@
 #pragma once
 #include "object-math.h"
 namespace comic {
+// The compositor's unchanged cylindrical window, including its focus outset.
+struct CylinderSurface {
+  fsv::gltf::Pose frame;
+  float radius = 2, horizontal = 1, top = .5f, bottom = -.5f;
+  fsv::gltf::Vec3 point(float u, float v) const {
+    float angle = (u - .5f) * horizontal;
+    return fsv::gltf::transform(frame, {radius * std::sin(angle),
+                                        radius * (top + (bottom - top) * v),
+                                        -radius * std::cos(angle)});
+  }
+  fsv::gltf::Pose tangent(float u, float v) const {
+    float half = -(u - .5f) * horizontal / 2;
+    return {point(u, v),
+            frame.orientation *
+                fsv::gltf::Quat{0, std::sin(half), 0, std::cos(half)},
+            1};
+  }
+};
 // Parallel cameras with an asymmetric frustum. The application surface is the
 // zero-disparity plane; geometry behind it has uncrossed binocular disparity.
 inline fsv::gltf::Mat4 windowEyeProjection(fsv::gltf::Vec3 eye, float width,

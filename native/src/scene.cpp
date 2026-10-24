@@ -258,8 +258,6 @@ void background(Glb &out, Art &art, const std::string &name) {
 } // namespace
 void exportScene(const Panel &panel, Art &art, const fs::path &path,
                  const std::string &font, int size) {
-  if (panel.messages.empty())
-    throw std::runtime_error("No panel to export");
   auto rendered = render(panel, art, font, size);
   Glb out;
   out.j["extras"] = {
@@ -269,6 +267,12 @@ void exportScene(const Panel &panel, Art &art, const fs::path &path,
       {"upstream", "48a162249484ab8d116c243e8203b0956d350c09"},
       {"depthMetres", .035}};
   background(out, art, panel.backdrop);
+  if (panel.messages.empty()) {
+    if (!path.parent_path().empty())
+      fs::create_directories(path.parent_path());
+    out.save(path);
+    return;
+  }
   for (auto &a : rendered.layout.actors) {
     float cx = (a.x + a.w / 2) / PANEL, cy = (a.y + a.h / 2) / PANEL;
     // Rectilinear front view preserves the comic layout exactly at the

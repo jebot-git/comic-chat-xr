@@ -305,6 +305,7 @@ class ComicPage : public Fl_Widget {
   std::vector<std::shared_ptr<Image>> panels;
   std::vector<std::unique_ptr<TextureImage>> images;
   std::vector<std::string> signatures;
+  std::unique_ptr<TextureImage> idleBackdrop;
   int offset = 0, columns = 2, selected = -1;
   std::function<void(int)> selection;
 
@@ -338,6 +339,12 @@ public:
     panels = std::move(nextPanels);
     images = std::move(nextImages);
     signatures = std::move(nextSignatures);
+    if (panels.empty()) {
+      auto idle = std::make_shared<Image>(
+          render(Panel{{}, doc.backdrop}, art, font, size).panel);
+      idleBackdrop = std::make_unique<TextureImage>(idle);
+    } else
+      idleBackdrop.reset();
     selected = panels.empty() ? -1 : panels.size() - 1;
     offset = std::max(0, contentHeight() - h());
     redraw();
@@ -353,10 +360,9 @@ public:
     fl_push_clip(x(), y(), w(), h());
     fl_color(FL_WHITE);
     fl_rectf(x(), y(), w(), h());
-    if (images.empty()) {
-      fl_color(FL_BLACK);
-      fl_font(dx::font, dx::size);
-      fl_draw("Connect to an IRC server to begin a comic.", x() + 16, y() + 32);
+    if (images.empty() && idleBackdrop) {
+      int side = std::max(1, std::min(w() - 16, h() - 16));
+      idleBackdrop->draw(*this, x() + (w() - side) / 2, y() + 8, side, side);
     }
     int side = cell() - 10;
     for (size_t i = 0; i < images.size(); ++i) {
@@ -496,6 +502,7 @@ public:
       glDeleteRenderbuffers(1, &depth);
     abandon();
   }
+  GLuint colorTexture() const { return texture; }
   GLuint get(int w, int h) {
     if (w == width && h == height && framebuffer)
       return framebuffer;
@@ -510,6 +517,8 @@ public:
                  nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            texture, 0);
     glGenRenderbuffers(1, &depth);
@@ -578,7 +587,8 @@ public:
     }
     return Fl_Widget::handle(event);
   }
-  void composite(int logicalW, int logicalH, int pixelsW, int pixelsH) {
+  void composite(int logicalW, int logicalH, int pixelsW, int pixelsH,
+                 bool renderScene = true) {
     using namespace fsv::gltf;
     GLint original = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &original);
@@ -602,6 +612,11 @@ public:
         glBlitFramebuffer(0, 0, pixelsW, pixelsH, pixelsW - half, 0, pixelsW,
                           pixelsH, GL_COLOR_BUFFER_BIT, GL_LINEAR);
       }
+      if (!renderScene) {
+        glBindFramebuffer(GL_FRAMEBUFFER, original);
+        glPopAttrib();
+        return;
+      }
       int pw = std::max(1, w() * pixelsW / logicalW),
           ph = std::max(1, h() * pixelsH / logicalH);
       GLuint target = eyeTarget.get(pw, ph);
@@ -623,6 +638,25 @@ public:
                   trs({0, -1.6f, 0}, {});
       float centreX = windowW * ((x() + w() / 2.f) / logicalW - .5f);
       float centreY = windowH * (.5f - (y() + h() / 2.f) / logicalH);
+      CylinderSurface cylinder;
+      fsv::gltf::Pose tangent;
+      if (mode.hasCylinder) {
+        auto p = mode.cylinderPosition;
+        auto q = mode.cylinderOrientation;
+        cylinder = {{{p[0], p[1], p[2]}, {q[0], q[1], q[2], q[3]}, 1},
+                    mode.cylinderRadius,
+                    mode.cylinderHorizontal,
+                    mode.cylinderTop,
+                    mode.cylinderBottom};
+        tangent = cylinder.tangent((x() + w() / 2.f) / logicalW,
+                                   (y() + h() / 2.f) / logicalH);
+      }
+      auto surfacePoint = [&](float u, float v) {
+        auto p = cylinder.point((x() + u * w()) / logicalW,
+                                (y() + v * h()) / logicalH);
+        auto local = transform(inverse(tangent), p);
+        return Vec3{local.x, 1.6f + local.y, local.z - distance};
+      };
       int count = stereo ? 2 : 1;
       if (model)
         renderer.prepare(model, 0);
@@ -642,12 +676,34 @@ public:
                 {p[0], p[1], p[2]}, {q[0], q[1], q[2], q[3]}, 1};
             worldEye = transform(head, {eye ? .032f : -.032f, 0, 0});
           }
-          auto local = transform(inverse(panel), worldEye);
-          relative = {local.x - centreX, local.y - centreY, local.z - distance};
+          auto local =
+              transform(inverse(mode.hasCylinder ? tangent : panel), worldEye);
+          relative = {local.x - (mode.hasCylinder ? 0 : centreX),
+                      local.y - (mode.hasCylinder ? 0 : centreY),
+                      local.z - distance};
         }
         relative.x += offsetX;
         relative.y += offsetY;
         auto vp = windowEyeProjection(relative, width, height, distance);
+        if (mode.hasCylinder) {
+          float left = 1e9f, right = -1e9f, down = 1e9f, up = -1e9f;
+          Vec3 eyePosition{relative.x, 1.6f + relative.y, relative.z};
+          for (int row = 0; row <= 8; ++row)
+            for (int col = 0; col <= 32; ++col) {
+              auto ray = surfacePoint(col / 32.f, row / 8.f) - eyePosition;
+              if (ray.z >= -.02f)
+                continue;
+              left = std::min(left, ray.x / -ray.z);
+              right = std::max(right, ray.x / -ray.z);
+              down = std::min(down, ray.y / -ray.z);
+              up = std::max(up, ray.y / -ray.z);
+            }
+          if (!(left < right && down < up))
+            throw std::runtime_error("Chat surface is behind the viewer");
+          vp = perspective(std::atan(left), std::atan(right), std::atan(down),
+                           std::atan(up)) *
+               matrix(inverse(fsv::gltf::Pose{eyePosition, {}, 1}));
+        }
         glBindFramebuffer(GL_FRAMEBUFFER, target);
         if (model)
           renderer.draw(vp, root, {relative.x, 1.6f + relative.y, relative.z},
@@ -668,8 +724,56 @@ public:
         }
         int bottom = (logicalH - y() - h()) * pixelsH / logicalH,
             top = (logicalH - y()) * pixelsH / logicalH;
-        glBlitFramebuffer(0, 0, pw, ph, left, bottom, right, top,
-                          GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        if (!mode.hasCylinder) {
+          glBlitFramebuffer(0, 0, pw, ph, left, bottom, right, top,
+                            GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        } else {
+          // Reproject each eye through the physical cylinder. Only this content
+          // rectangle is warped; chrome retains the compositor's normal UVs.
+          glBindFramebuffer(GL_FRAMEBUFFER, original);
+          glViewport(0, 0, pixelsW, pixelsH);
+          glUseProgram(0);
+          glBindVertexArray(0);
+          glActiveTexture(GL_TEXTURE0);
+          glBindSampler(0, 0);
+          glEnable(GL_TEXTURE_2D);
+          glBindTexture(GL_TEXTURE_2D, eyeTarget.colorTexture());
+          glDisable(GL_DEPTH_TEST);
+          glDisable(GL_CULL_FACE);
+          glDisable(GL_BLEND);
+          glColor4f(1, 1, 1, 1);
+          GLint previousMatrix;
+          glGetIntegerv(GL_MATRIX_MODE, &previousMatrix);
+          glMatrixMode(GL_PROJECTION);
+          glPushMatrix();
+          glLoadIdentity();
+          glOrtho(0, pixelsW, 0, pixelsH, -1, 1);
+          glMatrixMode(GL_MODELVIEW);
+          glPushMatrix();
+          glLoadIdentity();
+          auto vertex = [&](float u, float v) {
+            auto p = point(vp, surfacePoint(u, v));
+            glTexCoord2f((p.x + 1) / 2, (p.y + 1) / 2);
+            glVertex2f(left + u * (right - left), top - v * (top - bottom));
+          };
+          glBegin(GL_TRIANGLES);
+          for (int row = 0; row < 32; ++row)
+            for (int col = 0; col < 32; ++col) {
+              float u = col / 32.f, v = row / 32.f, a = (col + 1) / 32.f,
+                    b = (row + 1) / 32.f;
+              vertex(u, v);
+              vertex(a, v);
+              vertex(a, b);
+              vertex(u, v);
+              vertex(a, b);
+              vertex(u, b);
+            }
+          glEnd();
+          glPopMatrix();
+          glMatrixMode(GL_PROJECTION);
+          glPopMatrix();
+          glMatrixMode(previousMatrix);
+        }
       }
       if (model) {
         ++frames;
@@ -694,13 +798,15 @@ class Window : public dx::GpuWindow {
   Irc irc;
   SceneWriter writer;
   DomeMonitor domeMode;
-  bool xrView = false, sceneOpened = false;
+  bool xrView = false, xrPresentation = false, enable3D = true,
+       sceneOpened = false;
+  Panel idlePanel;
   size_t xrEntries = 0, desktopReturns = 0;
   std::string modeLabel;
   Fl_Menu_Bar menu{0, 0, 1120, 28};
   Fl_Button connectButton{8, 34, 104, 30, "Connect"},
       textButton{120, 34, 104, 30, "Text view"},
-      xrButton{232, 34, 130, 30, "Reset 3D view"};
+      xrButton{232, 34, 130, 30, "2D view"};
   Fl_Choice character{450, 34, 160, 30, "Character"},
       backdrop{712, 34, 160, 30, "Backdrop"};
   ComicPage page{8, 74, 870, 610};
@@ -778,7 +884,10 @@ class Window : public dx::GpuWindow {
   }
   const Panel *currentPanel() {
     int n = page.current();
-    return n >= 0 && n < int(doc.panels.size()) ? &doc.panels[n] : nullptr;
+    if (n >= 0 && n < int(doc.panels.size()))
+      return &doc.panels[n];
+    idlePanel.backdrop = doc.backdrop;
+    return &idlePanel;
   }
   void requestScene() {
     if (auto p = currentPanel())
@@ -786,7 +895,8 @@ class Window : public dx::GpuWindow {
                      std::clamp(dx::size, 14, 20));
   }
   void announce(const std::string &target) {
-    irc.send("PRIVMSG " + target + " :# Appears as " + doc.character);
+    if (!target.empty())
+      irc.send("PRIVMSG " + target + " :# Appears as " + doc.character);
   }
   void process(const std::string &line) {
     auto p = parseIrc(line);
@@ -796,7 +906,9 @@ class Window : public dx::GpuWindow {
       registered = true;
       if (!p.args.empty())
         doc.nick = p.args[0];
-      info("Registered; joining " + doc.channel);
+      info(doc.channel.empty()
+               ? "Connected — use /join #channel to enter a room."
+               : "Registered; joining " + doc.channel);
     } else if (p.command == "JOIN" && !p.args.empty() &&
                casefold(p.args[0]) == casefold(doc.channel)) {
       users.insert(nick);
@@ -945,6 +1057,8 @@ class Window : public dx::GpuWindow {
     host.value("irc.libera.chat");
     nick.value(doc.nick.c_str());
     channel.value(doc.channel.c_str());
+    channel.tooltip(
+        "Optional: leave empty to connect without joining a channel.");
     port.value("6697");
     tls.value(1);
     bool accepted = false;
@@ -998,6 +1112,27 @@ class Window : public dx::GpuWindow {
         input.value("");
       return;
     }
+    if (value.rfind("/join ", 0) == 0) {
+      auto channel = value.substr(6);
+      if (channel.empty() || (channel[0] != '#' && channel[0] != '&') ||
+          channel.find_first_of(" \r\n,:\0", 0, 6) != std::string::npos ||
+          channel.size() > 100) {
+        info("Use /join #channel with a valid channel name.");
+        return;
+      }
+      if (irc.send("JOIN " + channel)) {
+        doc.channel = channel;
+        users.clear();
+        operators.clear();
+        updateMembers();
+        input.value("");
+      }
+      return;
+    }
+    if (doc.channel.empty()) {
+      info("Join a channel with /join #channel before sending chat messages.");
+      return;
+    }
     Expression e = selected;
     if (e.emotion == 0)
       e = infer(value);
@@ -1008,7 +1143,7 @@ class Window : public dx::GpuWindow {
       e.mode = 3;
       value = value.substr(7);
     } else if (value[0] == '/') {
-      info("Commands: /me, /think, /nick, /quit");
+      info("Commands: /join, /me, /think, /nick, /quit");
       return;
     }
     Message m{doc.nick, value, doc.character, e};
@@ -1030,7 +1165,6 @@ class Window : public dx::GpuWindow {
       text.hide();
       scene.show();
       textButton.deactivate();
-      xrButton.activate();
     } else {
       scene.hide();
       if (useText) {
@@ -1041,8 +1175,12 @@ class Window : public dx::GpuWindow {
         page.show();
       }
       textButton.activate();
-      xrButton.deactivate();
     }
+    xrButton.label(xrView ? "2D view" : "3D view");
+    if (xrPresentation)
+      xrButton.activate();
+    else
+      xrButton.deactivate();
     textButton.label(useText ? "Comic view" : "Text view");
     redraw();
   }
@@ -1077,7 +1215,9 @@ class Window : public dx::GpuWindow {
       wheel.value(selected.emotion, selected.intensity);
       updatePreview();
     } else if (w == &xrButton) {
-      scene.reset();
+      enable3D = !enable3D;
+      xrView = xrPresentation && enable3D;
+      updateView();
     } else if (w == &textButton) {
       useText = !useText;
       updateView();
@@ -1095,7 +1235,9 @@ class Window : public dx::GpuWindow {
         hide();
       else if (cmd == "View/Comic or text")
         action(&textButton);
-      else if (cmd == "View/Reset 3D view")
+      else if (cmd == "View/3D view")
+        action(&xrButton);
+      else if (cmd == "View/Reset 3D camera")
         scene.reset();
       else if (cmd == "File/Export XR scene…") {
         auto p =
@@ -1171,7 +1313,9 @@ class Window : public dx::GpuWindow {
         info(error);
       }
       auto mode = domeMode.snapshot();
-      bool nextXR = mode.managed && mode.known && mode.xr;
+      bool wasPresentation = xrPresentation;
+      xrPresentation = mode.managed && mode.known && mode.xr;
+      bool nextXR = xrPresentation && enable3D;
       if (nextXR != xrView) {
         xrView = nextXR;
         if (xrView)
@@ -1180,6 +1324,8 @@ class Window : public dx::GpuWindow {
           ++desktopReturns;
         updateView();
       }
+      if (wasPresentation != xrPresentation)
+        updateView();
       scene.advance(mode);
       if (!scene.error.empty())
         info(scene.error);
@@ -1224,6 +1370,8 @@ class Window : public dx::GpuWindow {
             {"managed", m.managed},
             {"known", m.known},
             {"xr", m.xr},
+            {"three_d_enabled", enable3D},
+            {"stereo_transport", xrPresentation && m.stereoSupported},
             {"view", xrView    ? "3d"
                      : useText ? "text"
                                : "comic"},
@@ -1231,6 +1379,7 @@ class Window : public dx::GpuWindow {
             {"stereo_frames", scene.stereoFrames},
             {"stereo_supported", m.stereoSupported},
             {"tracked_eyes", m.trackedEyes},
+            {"curved_surface", m.hasCylinder},
             {"window_id", m.windowId},
             {"xr_entries", xrEntries},
             {"desktop_returns", desktopReturns},
@@ -1253,8 +1402,8 @@ public:
       scene.abandon();
     damage(FL_DAMAGE_ALL);
     dx::GpuWindow::draw();
-    if (xrView)
-      scene.composite(w(), h(), pixel_w(), pixel_h());
+    if (xrPresentation)
+      scene.composite(w(), h(), pixel_w(), pixel_h(), xrView);
   }
   Window(Options options, Document document)
       : dx::GpuWindow(1120, 774, "Comic Chat XR"), opt(std::move(options)),
@@ -1284,7 +1433,8 @@ public:
           std::pair{"File/Export XR scene…", 0},
           std::pair{"File/Quit", FL_CTRL + 'q'},
           std::pair{"View/Comic or text", FL_CTRL + 't'},
-          std::pair{"View/Reset 3D view", 0}, std::pair{"Help/About", 0}})
+          std::pair{"View/3D view", 0}, std::pair{"View/Reset 3D camera", 0},
+          std::pair{"Help/About", 0}})
       menu.add(item.first, item.second, callback, this);
     if (dx::dome())
       menu.hide();
@@ -1321,6 +1471,7 @@ public:
     dx::style(this);
     updatePreview();
     sync();
+    updateView();
     info("Disconnected — Connect to an IRC server, or open a saved comic "
          "transcript.");
     fontRevision = dx::font_revision;
@@ -1412,7 +1563,9 @@ int ircProbe(const Options &o) {
         auto line = parseIrc(event["line"]);
         if (line.command == "001" && !sent) {
           sent = true;
-          irc.send("PRIVMSG " + c.channel + " :probe roundtrip");
+          irc.send(c.channel.empty()
+                       ? "WHOIS " + c.nick
+                       : "PRIVMSG " + c.channel + " :probe roundtrip");
         }
       }
     }

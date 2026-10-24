@@ -26,6 +26,11 @@ struct DomeMode {
   std::array<float, 3> windowPosition{};
   std::array<float, 4> windowOrientation{0, 0, 0, 1};
   std::array<float, 2> windowSize{};
+  bool hasCylinder = false;
+  std::array<float, 3> cylinderPosition{};
+  std::array<float, 4> cylinderOrientation{0, 0, 0, 1};
+  float cylinderRadius = 2, cylinderHorizontal = 1, cylinderTop = .5f,
+        cylinderBottom = -.5f;
   bool allowsXR() const { return !managed || (known && xr); }
 };
 // Observe only the compositor that owns this client's Wayland socket. All

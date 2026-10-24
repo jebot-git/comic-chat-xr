@@ -50,9 +50,10 @@ void Irc::connect(Connection c) {
     return !s.empty() &&
            s.find_first_of(" \r\n\0:,", 0, 6) == std::string::npos;
   };
-  if (!token(c.host) || !token(c.nick) || !token(c.channel) ||
-      c.nick.size() > 30 || c.host.size() > 253 || c.channel.size() > 100 ||
-      c.port < 1 || c.port > 65535 ||
+  if (!token(c.host) || !token(c.nick) ||
+      (!c.channel.empty() && !token(c.channel)) || c.nick.size() > 30 ||
+      c.host.size() > 253 || c.channel.size() > 100 || c.port < 1 ||
+      c.port > 65535 ||
       c.password.find_first_of("\r\n\0", 0, 3) != std::string::npos ||
       c.password.size() > 300)
     throw std::runtime_error("Invalid IRC host, nickname, channel or password");
@@ -139,7 +140,8 @@ void Irc::connect(Connection c) {
               write("PONG :" + parsed.args.back());
             if (parsed.command == "001" && !joined) {
               joined = true;
-              write("JOIN " + c.channel);
+              if (!c.channel.empty())
+                write("JOIN " + c.channel);
             }
             s->event({{"type", "line"}, {"line", line}});
           }

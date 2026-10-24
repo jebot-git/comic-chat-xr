@@ -111,7 +111,7 @@ try:
         assert 0<presentation['content_height_m']<2.8*presentation['lane_height_radians'],presentation
         assert presentation['xr_entries']>=2 and presentation['desktop_returns']>=1,presentation
         assert not presentation['scene_error'],presentation
-        assert presentation['stereo_supported'] and presentation['tracked_eyes'],presentation
+        assert presentation['stereo_supported'] and presentation['tracked_eyes'] and presentation['curved_surface'],presentation
         assert presentation['stereo_frames']>5,presentation
         assert presentation['window_id']==window['id'],presentation
         current=get('/api/state');span=current['spans'][window['lane']]
@@ -119,7 +119,7 @@ try:
         from PIL import Image
         image=Image.open(out/'automatic.png').convert('RGB')
         # The content rectangle must contain rendered artwork, not an empty GL surface.
-        dark=sum(max(pixel)<100 for pixel in image.crop((20,60,850,650)).getdata())
+        dark=sum(max(pixel)<100 for pixel in image.crop((20,60,850,650)).get_flattened_data())
         assert dark>3000,dark
         from PIL import ImageChops,ImageStat
         half=image.width//2
@@ -130,6 +130,31 @@ try:
         assert sum(ImageStat.Stat(diff).mean)>1,'Both eyes received the same artwork'
         assert window['stereo']=='side_by_side',window
         decoy.terminate();decoy.wait(timeout=5)
+        # Empty transcripts still show the selected backdrop in stereo.
+        idle=start([exe,'--seconds','2','--capture-ui',out/'idle-xr.png'],env,'idle-xr')
+        idleWindow=wait(lambda:next((w for w in get('/api/state')['scene']['windows'] if w.get('client_pid')==idle.pid),None))
+        post('/api/action',{'op':'pull_out','id':idleWindow['id'],'head':trackingHead})
+        idle.wait(timeout=15);assert idle.returncode==0
+        idleState=json.loads((out/'idle-xr.png.json').read_text())
+        assert not idleState['panels'] and idleState['presentation']['stereo_frames']>5,idleState
+        idleImage=Image.open(out/'idle-xr.png').convert('RGB')
+        assert sum(max(p)<80 for p in idleImage.crop((5,60,idleImage.width//2-120,590)).get_flattened_data())>5000,'XR idle backdrop is blank'
+        toggle=start([exe,'--seconds','3','--capture-ui',out/'toggle.png'],env,'toggle')
+        toggleWindow=wait(lambda:next((w for w in get('/api/state')['scene']['windows'] if w.get('client_pid')==toggle.pid),None))
+        post('/api/action',{'op':'pull_out','id':toggleWindow['id'],'head':trackingHead})
+        time.sleep(.8)
+        uv=[297/toggleWindow['desktop']['w'],20/toggleWindow['desktop']['h']]
+        post('/api/xr-input',{'actions':[],'events':[{'kind':'motion','id':toggleWindow['id'],'uv':uv}]})
+        post('/api/xr-input',{'actions':[],'events':[{'kind':'button','button':272,'pressed':True}]})
+        time.sleep(.1)
+        post('/api/xr-input',{'actions':[],'events':[{'kind':'button','button':272,'pressed':False}]})
+        toggle.wait(timeout=15);assert toggle.returncode==0
+        toggleState=json.loads((out/'toggle.png.json').read_text())['presentation']
+        assert toggleState['view']=='comic' and not toggleState['three_d_enabled'],toggleState
+        assert toggleState['stereo_transport'] and toggleState['stereo_frames']>5,toggleState
+        toggleImage=Image.open(out/'toggle.png').convert('RGB');half=toggleImage.width//2
+        assert ImageChops.difference(toggleImage.crop((0,0,half,toggleImage.height)),toggleImage.crop((toggleImage.width-half,0,toggleImage.width,toggleImage.height))).getbbox() is None,'2D mode must reach both eyes identically'
+        print('PASS empty-transcript backdrops and real XR button disables 3D persistently with stereo UI intact',flush=True)
         setmode(False)
         restored=start([exe,'--demo','--seconds','1','--capture-ui',out/'restored.png'],env,'restored')
         restored.wait(timeout=15);assert restored.returncode==0

@@ -42,6 +42,11 @@ try:
             pixels=list(crop.get_flattened_data());black=sum(max(p)<40 for p in pixels);white=sum(min(p)>220 for p in pixels)
             assert black>10000 and white>10000,(black,white)
             assert json.loads((out/'desktop.png.json').read_text())['panels']
+            idle=subprocess.Popen([str(exe),'--seconds','1','--capture-ui',str(out/'idle.png')],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);children.append(idle);idle.wait(timeout=15)
+            assert idle.returncode==0
+            assert not json.loads((out/'idle.png.json').read_text())['panels']
+            image=Image.open(out/'idle.png').convert('RGB')
+            assert sum(max(p)<80 for p in image.crop((20,80,550,560)).get_flattened_data())>10000,'Idle backdrop is blank'
             print('PASS native Wayland GPU comic art, bitmap text, FLTK controls, exported universal menu and clean teardown')
 finally:
     for child in reversed(children):

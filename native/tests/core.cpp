@@ -13,6 +13,12 @@ int main(int argc, char **argv) {
   assert(argc == 3);
   {
     using namespace fsv::gltf;
+    CylinderSurface cylinder;
+    cylinder.horizontal = 1.2f;
+    auto centre = cylinder.tangent(.3f, .7f);
+    assert(length(transform(inverse(centre), cylinder.point(.3f, .7f))) < 1e-5);
+    auto a = transform(inverse(centre), cylinder.point(.31f, .7f));
+    assert(a.x > 0 && std::abs(a.y) < 1e-5 && a.z > 0);
     Vec3 left{-.032f, .025f, .1f}, right{.032f, .025f, .1f};
     auto l = windowEyeProjection(left, 1.2f, .8f, 2);
     auto r = windowEyeProjection(right, 1.2f, .8f, 2);
@@ -84,6 +90,10 @@ int main(int argc, char **argv) {
   assert(irc.prefix == "Anna!a@host" && irc.args[1] == "Hello there");
   assert(casefold("NICK[\\^") == "nick{|~");
   assert(plain("a\r\nb") == "ab");
+  exportScene(Panel{{}, "room"}, art, qa / "idle-background.glb");
+  auto idle = fsv::gltf::load(qa / "idle-background.glb");
+  assert(idle->evaluate(0).draws.size() == 3);
+  assert(idle->images.size() == 3);
   Document doc;
   doc.demo();
   assert(doc.panels.size() == 2);

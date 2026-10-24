@@ -39,7 +39,10 @@ try:
         env.pop('WAYLAND_DISPLAY',None)
         def xdo(*args):return subprocess.check_output(['xdotool',*map(str,args)],env=env,text=True).strip()
         def click(x,y):xdo('mousemove',x,y,'click',1)
-        def fill(x,y,value):click(x,y);xdo('key','ctrl+a');xdo('type','--clearmodifiers','--delay',1,value)
+        def fill(x,y,value):
+            click(x,y);xdo('key','ctrl+a')
+            if value:xdo('type','--clearmodifiers','--delay',1,value)
+            else:xdo('key','BackSpace')
         with (out/'app.log').open('w') as log:
             app=subprocess.Popen([str(exe),'--seconds','12','--capture-ui',str(out/'chat.png')],env=env,stdout=log,stderr=log);children.append(app)
             main=wait(lambda:xdo('search','--name','^Comic Chat XR$') if subprocess.run(['xdotool','search','--name','^Comic Chat XR$'],env=env,stdout=subprocess.DEVNULL).returncode==0 else None)
@@ -49,7 +52,10 @@ try:
             dialog=wait(lambda:subprocess.run(['xdotool','search','--name','^Connect to IRC$'],env=env,capture_output=True,text=True).stdout.strip())
             geometry=dict(line.split('=',1) for line in xdo('getwindowgeometry','--shell',dialog.splitlines()[-1]).splitlines() if '=' in line)
             ox,oy=int(geometry['X']),int(geometry['Y'])
-            fill(ox+220,oy+35,'127.0.0.1');fill(ox+220,oy+75,'ComicXR');fill(ox+180,oy+155,str(port));click(ox+290,oy+155);click(ox+330,oy+295)
+            fill(ox+220,oy+35,'127.0.0.1');fill(ox+220,oy+75,'ComicXR');fill(ox+220,oy+115,'');fill(ox+180,oy+155,str(port));click(ox+290,oy+155);click(ox+330,oy+295)
+            wait(lambda:any(line.startswith('USER ') for line in received));time.sleep(.25)
+            assert not any(line.startswith('JOIN ') for line in received),received
+            fill(mx+160,my+720,'/join #comicchat');xdo('key','Return')
             wait(lambda:any('Appears as' in line for line in received))
             click(mx+1043,my+560);fill(mx+160,my+720,'Hello native cutouts');xdo('key','Return')
             wait(lambda:any('Hello native cutouts' in line for line in received))

@@ -143,6 +143,32 @@ int main(int argc, char **argv) {
   exportScene(doc.panels.back(), art, qa / "scene.glb");
   auto gltf = fsv::gltf::load(qa / "scene.glb");
   assert(gltf->images.size() == 6);
+  // Artwork remains pixel-sharp while text has enough source detail for
+  // oblique stereo sampling, with a separate mipmapped linear sampler.
+  assert(gltf->images.back().width == PANEL * 3);
+  assert(gltf->images.back().height == PANEL * 3);
+  assert(gltf->textures.back().mag == 9729 && gltf->textures.back().min == 9987);
+  for (size_t i = 0; i + 1 < gltf->textures.size(); ++i)
+    assert(gltf->textures[i].mag == 9728 && gltf->textures[i].min == 9728);
+  auto sceneMetadata = [&](const fs::path &path) {
+    std::ifstream stream(path, std::ios::binary);
+    stream.seekg(12);
+    uint32_t length = 0;
+    stream.read(reinterpret_cast<char *>(&length), 4);
+    stream.seekg(20);
+    std::string json(length, ' ');
+    stream.read(json.data(), length);
+    return Json::parse(json);
+  };
+  Panel shortMessage{{Message{"Anna", "Readable in stereo", "anna", {}}}, "room"};
+  exportScene(shortMessage, art, qa / "readable-text.glb", "monospace", 14);
+  auto textMetadata = sceneMetadata(qa / "readable-text.glb")["nodes"].back()["extras"];
+  assert(textMetadata["fontSize"] == 24);
+  assert(balloonsFit(shortMessage, "monospace", textMetadata["fontSize"]));
+  auto denseMetadata = sceneMetadata(qa / "scene.glb")["nodes"].back()["extras"];
+  assert(int(denseMetadata["fontSize"]) >= 18);
+  assert(balloonsFit(doc.panels.back(), "monospace", denseMetadata["fontSize"]));
+
   auto frame = gltf->evaluate(0);
   assert(frame.draws.size() == 6);
   assert(std::abs(frame.draws[0].world[14] + 7.f) < .00001);

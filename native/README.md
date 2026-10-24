@@ -138,6 +138,16 @@ or extra world anchor is applied. Drag inside the viewport to inspect depth para
 The selected backdrop is rendered even before the first chat message, in both
 desktop and XR views.
 
+XR speech balloons are rasterized at 3× density and use a dedicated linear,
+mipmapped sampler; the original character and backdrop textures retain their
+pixel-art sampling. Balloon type grows toward 24 logical pixels when the
+measured panel has room, retaining the configured font and falling back toward
+the original size for dense panels so enlarged messages stay within the existing
+balloon band.
+Desktop balloon layout and rendering are unchanged. Headset eye resolution and
+window texture density still limit the final angular text detail.
+
+
 The window uses DomeD's squeezed side-by-side transport under the explicit
 `org.de_xr.ComicChat.Sbs` identity. Each eye gets a separate off-axis projection;
 all controls are duplicated at zero disparity. Rendering and packing use GPU

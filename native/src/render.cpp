@@ -216,10 +216,14 @@ bool balloonsFit(const Panel &panel, const std::string &font, int size) {
   return used <= PANEL * .47 && panel.messages.size() <= 10;
 }
 Rendered render(const Panel &panel, Art &art, const std::string &font,
-                int fontSize) {
+                int fontSize, int balloonRasterScale) {
+  if (balloonRasterScale < 1 || balloonRasterScale > 4)
+    throw std::runtime_error("Invalid balloon raster scale");
   Rendered out;
   out.layout = layout(panel, art);
-  Surface image(PANEL, PANEL), balloons(PANEL, PANEL);
+  Surface image(PANEL, PANEL),
+      balloons(PANEL * balloonRasterScale, PANEL * balloonRasterScale);
+  cairo_scale(balloons.cr, balloonRasterScale, balloonRasterScale);
   auto backdrop = art.backdrop(panel.backdrop);
   paint(image.cr, *backdrop, 0, 0, PANEL, PANEL);
   for (auto &a : out.layout.actors)

@@ -52,7 +52,7 @@ struct Glb {
     bytes.insert(bytes.end(), b, b + n);
     return id;
   }
-  int material(const Image &im) {
+  int material(const Image &im, bool readableText = false) {
     png_image png{};
     png.version = PNG_IMAGE_VERSION;
     png.width = im.w;
@@ -68,7 +68,15 @@ struct Glb {
       throw std::runtime_error("PNG encode failed");
     int v = view(encoded.data(), n), id = j["materials"].size();
     j["images"].push_back({{"bufferView", v}, {"mimeType", "image/png"}});
-    j["textures"].push_back({{"sampler", 0}, {"source", id}});
+    int sampler = 0;
+    if (readableText) {
+      sampler = j["samplers"].size();
+      j["samplers"].push_back({{"magFilter", 9729},
+                               {"minFilter", 9987},
+                               {"wrapS", 33071},
+                               {"wrapT", 33071}});
+    }
+    j["textures"].push_back({{"sampler", sampler}, {"source", id}});
     j["materials"].push_back(
         {{"name", "original-art"},
          {"pbrMetallicRoughness",
@@ -258,7 +266,14 @@ void background(Glb &out, Art &art, const std::string &name) {
 } // namespace
 void exportScene(const Panel &panel, Art &art, const fs::path &path,
                  const std::string &font, int size) {
-  auto rendered = render(panel, art, font, size);
+  // Grow short messages without overlapping the character area or squeezing
+  // dense panels into smaller type. Rasterization density is independent of
+  // angular font size; artwork keeps its original nearest-neighbor sampler.
+  int textSize = std::max(size, 24);
+  while (textSize > size && !balloonsFit(panel, font, textSize))
+    --textSize;
+  constexpr int textRasterScale = 3;
+  auto rendered = render(panel, art, font, textSize, textRasterScale);
   Glb out;
   out.j["extras"] = {
       {"application", "Comic Chat XR"},
@@ -293,14 +308,14 @@ void exportScene(const Panel &panel, Art &art, const fs::path &path,
               {"depthMetres", .035}},
              {px, py, pz});
   }
-  // Text bubbles are separate spatial geometry in front of the speakers, same
-  // pixels.
+  // Text bubbles are separate spatial geometry in front of the speakers.
   // Keep the same reference projection while placing balloons just in front.
   constexpr float balloonDepth = 1.97f;
   auto balloon =
       cutout(rendered.balloons, 2 * balloonDepth, 2 * balloonDepth, .004, 1);
-  out.mesh(balloon, out.material(rendered.balloons), "Speech balloons",
-           {{"role", "balloons"}}, {0, 1.6, -balloonDepth - .002f});
+  out.mesh(balloon, out.material(rendered.balloons, true), "Speech balloons",
+           {{"role", "balloons"}, {"fontSize", textSize},
+            {"rasterScale", textRasterScale}}, {0, 1.6, -balloonDepth - .002f});
   if (!path.parent_path().empty())
     fs::create_directories(path.parent_path());
   out.save(path);

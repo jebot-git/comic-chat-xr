@@ -89,7 +89,7 @@ BalloonMetrics measureBalloon(const std::string &, const std::string &font,
                               int fontSize);
 bool balloonsFit(const Panel &, const std::string &font, int fontSize);
 Rendered render(const Panel &, Art &, const std::string &font = "monospace",
-                int fontSize = 18);
+                int fontSize = 18, int balloonRasterScale = 1);
 void exportScene(const Panel &, Art &, const fs::path &,
                  const std::string &font = "monospace", int fontSize = 18);
 void exportCharacter(const std::string &, const Expression &, Art &,

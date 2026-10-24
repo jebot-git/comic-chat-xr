@@ -20,7 +20,7 @@ try:
         port=listener.getsockname()[1]
         def server():
             try:
-                conn,_=listener.accept();conn.settimeout(10)
+                conn,_=listener.accept();conn.settimeout(60)
                 with conn:
                     file=conn.makefile('rwb',buffering=0)
                     while True:
@@ -32,6 +32,15 @@ try:
                             file.write(b':ComicXR!me@local JOIN :#comicchat\r\n:test 353 ComicXR = #comicchat :@ComicXR Anna\r\n:Anna!a@local PRIVMSG #comicchat :# Appears as anna\r\n')
                             file.write(':Anna!a@local PRIVMSG #comicchat :(#G099E119RM1) Hello from 世界\r\n'.encode())
                             file.write(b':test 332 ComicXR #comicchat :Our channel topic\r\n:test NOTICE #comicchat :Channel announcement\r\n:Bob!b@local JOIN :#comicchat\r\n:Bob!b@local PART #comicchat :Leaving now\r\n')
+                        if line=='PRIVMSG #field :request backdrop':file.write(b':Anna!a@local PRIVMSG #field :# BDrop2: buckroom.bgb,\r\n')
+                        if line=='PRIVMSG #clouds :request backdrop':file.write(b':Anna!a@local PRIVMSG #clouds :# BDrop2: buckroom.bgb,\r\n')
+                        if line in ['JOIN #space','JOIN #field','JOIN #yellow','JOIN #clouds']:
+                            channel=line.split()[1]
+                            file.write(f':ComicXR!me@local JOIN :{channel}\r\n:test 353 ComicXR = {channel} :@ComicXR @Anna\r\n'.encode())
+                            if channel=='#space':file.write(b':test 353 ComicXR = #unrelated :@FakeOp\r\n:FakeOp!f@local PRIVMSG #space :# BDrop2: buckroom.bgb,\r\n')
+                            if channel=='#field':file.write(b':Anna!a@local PRIVMSG #field :# BDrop2: buckroom.bgb,\r\n')
+                            if channel=='#yellow':file.write(b':Anna!a@local PRIVMSG #yellow :# BDrop2: room.bgb,\r\n')
+                            file.write(f':Anna!a@local PRIVMSG {channel} :Entered {channel}\r\n'.encode())
             except Exception as error:errors.append(str(error))
         thread=threading.Thread(target=server,daemon=True);thread.start()
         r,w=os.pipe();xvfb=subprocess.Popen(['Xvfb','-displayfd',str(w),'-screen','0','1400x1000x24','-nolisten','tcp'],pass_fds=(w,),stderr=subprocess.DEVNULL);children.append(xvfb);os.close(w)
@@ -45,7 +54,7 @@ try:
             if value:xdo('type','--clearmodifiers','--delay',1,value)
             else:xdo('key','BackSpace')
         with (out/'app.log').open('w') as log:
-            app=subprocess.Popen([str(exe),'--seconds','22','--capture-ui',str(out/'chat.png')],env=env,stdout=log,stderr=log);children.append(app)
+            app=subprocess.Popen([str(exe),'--seconds','40','--capture-ui',str(out/'chat.png')],env=env,stdout=log,stderr=log);children.append(app)
             main=wait(lambda:xdo('search','--name','^Comic Chat XR$') if subprocess.run(['xdotool','search','--name','^Comic Chat XR$'],env=env,stdout=subprocess.DEVNULL).returncode==0 else None)
             geometry=dict(line.split('=',1) for line in xdo('getwindowgeometry','--shell',main.splitlines()[-1]).splitlines() if '=' in line)
             mx,my=int(geometry['X']),int(geometry['Y']);time.sleep(.3)
@@ -67,7 +76,28 @@ try:
             wait(lambda:any(line.startswith('PRIVMSG Anna :') and 'Private query message' in line for line in received))
             fill(mx+160,my+720,'/query');xdo('key','Return')
             xdo('key','ctrl+t');time.sleep(.15);xdo('key','ctrl+t')
-            app.wait(timeout=35)
+            def command(value):
+                fill(mx+160,my+720,value);xdo('key','Return');time.sleep(.12)
+            command('/format off');plain_start=len(received)
+            # Exercise the actual type selector, not only the local command.
+            click(mx+55,my+720);xdo('key','Home');xdo('key','Down');xdo('key','Return')
+            command('Plain whisper');wait(lambda:'PRIVMSG #comicchat :Plain whisper' in received)
+            command('/balloon thought');command('Plain thought')
+            wait(lambda:'PRIVMSG #comicchat :\x01ACTION thinks Plain thought\x01' in received)
+            command('/balloon action');command('Plain action')
+            wait(lambda:'PRIVMSG #comicchat :\x01ACTION Plain action\x01' in received)
+            command('/balloon shout');command('Plain shout')
+            wait(lambda:'PRIVMSG #comicchat :Plain shout' in received)
+            command('/SAY Plain speech');wait(lambda:'PRIVMSG #comicchat :Plain speech' in received)
+            command('/backdrop auto');command('/join #space');time.sleep(.25)
+            command('/join #field');time.sleep(.25);command('/backdrop pastoral')
+            command('/raw PRIVMSG #field :request backdrop');time.sleep(.25)
+            command('/join #yellow');time.sleep(.25)
+            command('/backdrop auto');command('/join #clouds');time.sleep(.25)
+            command('/raw PRIVMSG #clouds :request backdrop');time.sleep(.25)
+            command('/join #space');time.sleep(.25);command('/backdrop pastoral')
+            assert not any('(#G' in line or '# Appears as ' in line or '# BDrop' in line for line in received[plain_start:]),received[plain_start:]
+            app.wait(timeout=55)
         assert app.returncode==0,(out/'app.log').read_text()
         listener.close()
         state=json.loads((out/'chat.png.json').read_text());messages=[m for p in state['panels'] for m in p['messages']]
@@ -77,6 +107,19 @@ try:
         output=state['text_output']
         for expected in ['Server connection notice','Server MOTD before joining','Our channel topic','Channel announcement','* Bob joined','* Bob left (Leaving now)','Anna: Hello from 世界','ComicXR: Hello native cutouts']:
             assert expected in output,(expected,output)
+        for channel,backdrop in [('#space','space'),('#field','pastoral'),('#yellow','room'),('#clouds','buckroom')]:
+            panel=next(p for p in state['panels'] if any(m['text']=='Entered '+channel for m in p['messages']))
+            assert panel['backdrop']==backdrop,(channel,panel)
+        assert state['chat_options']=={'send_comic_formatting':False,'manual_backdrop':'pastoral','backdrop':'pastoral','balloon_mode':4},state['chat_options']
+        for body,mode in [('Plain whisper',2),('Plain thought',3),('Plain action',5),('Plain shout',4),('Plain speech',1)]:
+            assert any(m['text']==body and m['mode']==mode for m in messages),(body,messages)
+        preferences=json.loads(Path(directory+'/config/comic-chat-xr/preferences.json').read_text())
+        assert not preferences['send_comic_formatting'] and preferences['manual_backdrop']=='pastoral' and preferences['balloon_mode']==4,preferences
+        restored=subprocess.run([str(exe),'--demo','--seconds','1','--capture-ui',str(out/'preferences.png')],env=env,capture_output=True,text=True,timeout=20)
+        assert restored.returncode==0,restored.stderr
+        restored_options=json.loads((out/'preferences.png.json').read_text())['chat_options']
+        assert restored_options==state['chat_options'],restored_options
+        assert json.loads((out/'preferences.png.json').read_text())['panels'][-1]['backdrop']=='pastoral'
         assert state['presentation']['view']=='text',state['presentation']
         assert not any('Server MOTD' in m['text'] for m in messages),'Server output must not become speech balloons'
 

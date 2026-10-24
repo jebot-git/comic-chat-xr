@@ -313,8 +313,7 @@ void Document::load(const Json &j) {
       identities[casefold(message.nick)] = message.character;
       panel.messages.push_back(std::move(message));
     }
-    if (!panel.messages.empty())
-      loaded.push_back(std::move(panel));
+    loaded.push_back(std::move(panel));
   }
   // Publish only after the entire transcript validates; malformed later records
   // must never erase an already-open comic.
@@ -326,8 +325,7 @@ void Document::load(const Json &j) {
     staged.panels.push_back({{}, panel.backdrop});
     for (auto &message : panel.messages)
       staged.add(std::move(message));
-    if (staged.panels.back().messages.empty())
-      staged.panels.pop_back();
+
   }
   panels = std::move(staged.panels);
   characters = std::move(identities);

@@ -178,6 +178,11 @@ bool drawTail(cairo_t *cr, double y, double h, int mode, double base,
   curveTo(cr, left, tip, sign);
   curveTo(cr, tip, right, -sign);
   if (mode == 2) {
+    // Original whisper trajectories have a white nimbus under the dashes.
+    cairo_set_source_rgb(cr, 1, 1, 1);
+    cairo_set_line_width(cr, 5);
+    cairo_stroke_preserve(cr);
+    cairo_set_line_width(cr, 2);
     double dash[]{4, 3};
     cairo_set_dash(cr, dash, 2, 0);
   }
@@ -186,8 +191,85 @@ bool drawTail(cairo_t *cr, double y, double h, int mode, double base,
   cairo_set_dash(cr, nullptr, 0, 0);
   return true;
 }
+PangoLayout *logicalTextLayout(cairo_t *cr) {
+  // Keep Pango's line metrics in panel units even when Cairo rasterizes the
+  // balloon at XR texture density. Glyph painting still uses the scaled CTM.
+  cairo_save(cr);
+  cairo_identity_matrix(cr);
+  auto *layout = pango_cairo_create_layout(cr);
+  cairo_restore(cr);
+  return layout;
+}
+std::string balloonFont(const std::string &font, int mode) {
+  return mode == 2 ? font + " Italic" : font;
+}
+// Text-line envelopes and alternating wavies mirror GetFilters/AddWavies in
+// Microsoft's CreateBalloonSpline. Keep the result deterministic across
+// redraws.
+void textCloud(cairo_t *cr, double x, double y, double w, double h,
+               const std::string &value, const std::string &font, int size) {
+  auto *layout = logicalTextLayout(cr);
+  auto *desc = pango_font_description_from_string(font.c_str());
+  pango_font_description_set_absolute_size(desc, size * PANGO_SCALE);
+  pango_layout_set_font_description(layout, desc);
+  pango_layout_set_text(layout, value.c_str(), value.size());
+  pango_layout_set_width(layout, int(w - 36) * PANGO_SCALE);
+  pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
+  pango_layout_set_alignment(layout, PANGO_ALIGN_CENTER);
+  int tw, th;
+  pango_layout_get_pixel_size(layout, &tw, &th);
+  double top = y + 14 + std::max(0, (int(h - 28) - th) / 2);
+  struct Row {
+    double left, right, top, bottom;
+  };
+  std::vector<Row> rows;
+  auto *iter = pango_layout_get_iter(layout);
+  do {
+    PangoRectangle logical, line;
+    pango_layout_iter_get_line_extents(iter, nullptr, &logical);
+    pango_layout_line_get_pixel_extents(
+        pango_layout_iter_get_line_readonly(iter), nullptr, &line);
+    double width = std::max(1, line.width);
+    double left = x + (w - width) / 2;
+    rows.push_back(
+        {left - 14, left + width + 14,
+         top + double(logical.y) / PANGO_SCALE - 7,
+         top + double(logical.y + logical.height) / PANGO_SCALE + 7});
+  } while (pango_layout_iter_next_line(iter));
+  pango_layout_iter_free(iter);
+  pango_font_description_free(desc);
+  g_object_unref(layout);
+  for (size_t i = 0; i < rows.size(); ++i) {
+    if (i)
+      rows[i].top += 7;
+    if (i + 1 < rows.size())
+      rows[i].bottom -= 7;
+  }
+  std::vector<std::array<double, 2>> outline, waved;
+  for (auto &row : rows) {
+    outline.push_back({row.left, row.top});
+    outline.push_back({row.left, row.bottom});
+  }
+  for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+    outline.push_back({it->right, it->bottom});
+    outline.push_back({it->right, it->top});
+  }
+  for (size_t i = 0; i < outline.size(); ++i) {
+    auto a = outline[i], b = outline[(i + 1) % outline.size()];
+    waved.push_back(a);
+    double dx = b[0] - a[0], dy = b[1] - a[1], length = std::hypot(dx, dy);
+    int waves = int(length / 18.);
+    for (int k = 1; k < waves; ++k) {
+      double bow = k % 2 ? 3. : 0.;
+      waved.push_back({a[0] + dx * k / waves - dy / length * bow,
+                       a[1] + dy * k / waves + dx / length * bow});
+    }
+  }
+  woodring(cr, waved);
+}
 void bubble(cairo_t *cr, double x, double y, double w, double h, int mode,
-            double base, bool opening) {
+            double base, bool opening, const std::string &value,
+            const std::string &font, int size) {
   cairo_new_path(cr);
   cairo_set_line_width(cr, 2);
   cairo_set_source_rgb(cr, 1, 1, 1);
@@ -203,26 +285,10 @@ void bubble(cairo_t *cr, double x, double y, double w, double h, int mode,
         cairo_move_to(cr, px, py);
     }
     cairo_close_path(cr);
-  } else if (mode == 3) {
-    std::vector<std::array<double, 2>> points;
-    for (int i = 0; i < 48; ++i) {
-      double a = i * 2 * M_PI / 48, r = i % 4 == 0 ? 1.08 : .94;
-      points.push_back({x + w / 2 + std::cos(a) * w / 2 * r,
-                        y + h / 2 + std::sin(a) * h / 2 * r});
-    }
-    woodring(cr, points);
+  } else if (mode == 5) {
+    cairo_rectangle(cr, x, y, w, h);
   } else {
-    double r = std::min(20., h * .3);
-    woodring(cr, {{x + r, y},
-                  {x + w / 2, y - 2},
-                  {x + w - r, y},
-                  {x + w, y + r},
-                  {x + w, y + h - r},
-                  {x + w - r, y + h},
-                  {x + w / 2, y + h + 2},
-                  {x + r, y + h},
-                  {x, y + h - r},
-                  {x, y + r}});
+    textCloud(cr, x, y, w, h, value, font, size);
   }
   if (mode == 2) {
     double dash[] = {4, 3};
@@ -242,19 +308,30 @@ void bubble(cairo_t *cr, double x, double y, double w, double h, int mode,
   }
   cairo_new_path(cr);
   cairo_append_path(cr, contour);
+  if (mode == 2) {
+    cairo_set_dash(cr, nullptr, 0, 0);
+    cairo_set_source_rgb(cr, 1, 1, 1);
+    cairo_set_line_width(cr, 5);
+    cairo_stroke_preserve(cr);
+    cairo_set_source_rgb(cr, 0, 0, 0);
+    cairo_set_line_width(cr, 2);
+    double dash[]{4, 3};
+    cairo_set_dash(cr, dash, 2, 0);
+  }
   cairo_stroke(cr);
   cairo_restore(cr);
   cairo_path_destroy(contour);
   cairo_set_dash(cr, nullptr, 0, 0);
 }
 void text(cairo_t *cr, const std::string &value, const std::string &font,
-          int size, int x, int y, int w, int h) {
-  auto *layout = pango_cairo_create_layout(cr);
+          int size, int x, int y, int w, int h, bool leftAligned = false) {
+  auto *layout = logicalTextLayout(cr);
   auto *desc = pango_font_description_from_string(font.c_str());
   pango_layout_set_text(layout, value.c_str(), value.size());
   pango_layout_set_width(layout, w * PANGO_SCALE);
   pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
-  pango_layout_set_alignment(layout, PANGO_ALIGN_CENTER);
+  pango_layout_set_alignment(layout, leftAligned ? PANGO_ALIGN_LEFT
+                                                 : PANGO_ALIGN_CENTER);
   int tw = 0, th = 0;
   do {
     pango_font_description_set_absolute_size(desc, size * PANGO_SCALE);
@@ -293,9 +370,16 @@ BalloonMetrics measureBalloon(const std::string &value, const std::string &font,
   pango_layout_set_width(layout, int(goal - 36) * PANGO_SCALE);
   pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
   pango_layout_get_pixel_size(layout, &width, &height);
+  PangoRectangle lastLine;
+  pango_layout_line_get_pixel_extents(
+      pango_layout_get_line_readonly(layout,
+                                     pango_layout_get_line_count(layout) - 1),
+      nullptr, &lastLine);
   pango_font_description_free(desc);
   g_object_unref(layout);
-  return {goal, double(std::max(42, height + 28))};
+  return {std::min(goal, double(std::max(100, width + 36))),
+          double(std::max(42, height + 28)),
+          double(std::max(1, lastLine.width))};
 }
 bool balloonsFit(const Panel &panel, const std::string &font, int size) {
   double used = 9;
@@ -303,7 +387,10 @@ bool balloonsFit(const Panel &panel, const std::string &font, int size) {
     auto value = message.expression.mode == 5
                      ? message.nick + " " + message.text
                      : message.text;
-    used += measureBalloon(value, font, size).height + 6;
+    used +=
+        measureBalloon(value, balloonFont(font, message.expression.mode), size)
+            .height +
+        6;
   }
   return used <= PANEL * .47 && panel.messages.size() <= 10;
 }
@@ -331,7 +418,8 @@ Rendered render(const Panel &panel, Art &art, const std::string &font,
         out.layout.actors.begin(), out.layout.actors.end(),
         [&](auto &a) { return casefold(a.nick) == casefold(m.nick); });
     auto value = m.expression.mode == 5 ? m.nick + " " + m.text : m.text;
-    auto metrics = measureBalloon(value, font, fontSize);
+    auto styledFont = balloonFont(font, m.expression.mode);
+    auto metrics = measureBalloon(value, styledFont, fontSize);
     double w = metrics.width, h = metrics.height;
     double centre =
         actor == out.layout.actors.end() ? PANEL / 2 : actor->x + actor->w / 2;
@@ -349,13 +437,17 @@ Rendered render(const Panel &panel, Art &art, const std::string &font,
                    ? 4
                    : m.expression.mode;
     double offset = tailX < PANEL / 2 ? -w * .18 : w * .18;
-    double base = std::clamp(tailX + offset, x + w * .22, x + w * .78);
+    double base =
+        std::clamp(tailX + offset, x + w / 2 - metrics.lastLineWidth / 2,
+                   x + w / 2 + metrics.lastLineWidth / 2);
     bool opening = drawTail(tails.cr, y, h, mode, base, {tailX, tailY}, mask);
-    bubble(balloons.cr, x, y, w, h, mode, base, opening);
+    char *upper = g_utf8_strup(value.c_str(), value.size());
+    bubble(balloons.cr, x, y, w, h, mode, base, opening, upper, styledFont,
+           fontSize);
     // Original CBWoodringNormal uppercases balloon text; the avatar identifies
     // its speaker. The text-only view retains nicknames and original casing.
-    char *upper = g_utf8_strup(value.c_str(), value.size());
-    text(balloons.cr, upper, font, fontSize, x + 18, y + 14, w - 36, h - 28);
+    text(balloons.cr, upper, styledFont, fontSize, x + 18, y + 14, w - 36,
+         h - 28, mode == 5);
     g_free(upper);
   }
   out.tails = tails.image();

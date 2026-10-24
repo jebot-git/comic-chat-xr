@@ -2,6 +2,7 @@
 #define GL_GLEXT_PROTOTYPES
 #include "appearance.h"
 #include "comic.h"
+#include "chat-policy.h"
 #include "desktop-menu.h"
 #include "domed.h"
 #include "gltf-render.h"
@@ -33,6 +34,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <csignal>
+#include <cstdlib>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -830,7 +832,8 @@ class Window : public dx::GpuWindow {
   CharacterPreview preview{888, 282, 224, 180};
   EmotionWheel wheel{888, 470, 224, 170};
   Fl_Choice expression{960, 646, 152, 28, "Pose"};
-  Fl_Input input{8, 694, 870, 34};
+  Fl_Choice balloonType{8, 694, 120, 34};
+  Fl_Input input{136, 694, 742, 34};
   Fl_Button sendButton{888, 694, 224, 34, "Send"};
   Fl_Output status{8, 736, 1104, 28};
   std::unique_ptr<DesktopMenu> desktop;
@@ -839,6 +842,8 @@ class Window : public dx::GpuWindow {
   Expression selected;
   fs::path tempDir, scenePath, exportPending;
   bool registered = false;
+  bool sendComicFormatting = true;
+  std::string manualBackdrop, channelBackdrop;
   std::string queryTarget;
   uint64_t fontRevision = 0;
   size_t stateSerial = 0;
@@ -893,6 +898,97 @@ class Window : public dx::GpuWindow {
     transcript.text(all.c_str());
     text.showTail();
   }
+  fs::path preferencesPath() const {
+    const char *config = std::getenv("XDG_CONFIG_HOME");
+    const char *home = std::getenv("HOME");
+    return (config && *config ? fs::path(config)
+                              : fs::path(home ? home : ".") / ".config") /
+           "comic-chat-xr/preferences.json";
+  }
+  void savePreferences() {
+    auto path = preferencesPath();
+    fs::create_directories(path.parent_path());
+    auto temporary = path;
+    temporary += ".tmp-" + std::to_string(getpid());
+    std::ofstream out(temporary);
+    out << Json{{"format", 1},
+                {"send_comic_formatting", sendComicFormatting},
+                {"manual_backdrop", manualBackdrop},
+                {"balloon_mode", balloonType.value() + 1}}
+               .dump(2)
+        << '\n';
+    out.close();
+    if (!out)
+      throw std::runtime_error("Cannot save Comic Chat preferences");
+    fs::rename(temporary, path);
+  }
+  void loadPreferences() {
+    auto path = preferencesPath();
+    if (!fs::exists(path) || fs::file_size(path) > 65536)
+      return;
+    try {
+      Json preferences;
+      std::ifstream(path) >> preferences;
+      auto sendFormatting = preferences.value("send_comic_formatting", true);
+      auto backdrop = preferences.value("manual_backdrop", std::string());
+      auto mode = std::clamp(preferences.value("balloon_mode", 1), 1, 5);
+      sendComicFormatting = sendFormatting;
+      if (art.catalog()["backdrops"].contains(backdrop))
+        manualBackdrop = backdrop;
+      balloonType.value(mode - 1);
+    } catch (
+        const std::exception &) { /* Invalid preferences leave safe defaults. */
+    }
+  }
+  void restoreBackdropOverride() {
+    if (!manualBackdrop.empty()) {
+      doc.backdrop = manualBackdrop;
+      if (!doc.panels.empty())
+        doc.panels.back().backdrop = manualBackdrop;
+    }
+  }
+  void updateFormattingMenu() {
+    auto *item = const_cast<Fl_Menu_Item *>(
+        menu.find_item("Options/Send Comic Chat formatting"));
+    if (item) {
+      if (sendComicFormatting)
+        item->set();
+      else
+        item->clear();
+    }
+  }
+  void setFormatting(bool enabled) {
+    sendComicFormatting = enabled;
+    updateFormattingMenu();
+    savePreferences();
+    info(enabled ? "Outgoing Comic Chat formatting enabled"
+                 : "Sending plain IRC messages; local comic rendering stays "
+                   "enabled");
+  }
+  void applyBackdrop(const std::string &name, bool entering = false) {
+    doc.backdrop = name;
+    if (entering &&
+        (doc.panels.empty() || !doc.panels.back().messages.empty())) {
+      doc.panels.push_back({{}, name});
+      if (doc.panels.size() > 200)
+        doc.panels.erase(doc.panels.begin());
+    } else if (!doc.panels.empty())
+      doc.panels.back().backdrop = name;
+    sync();
+  }
+  void chooseBackdrop(const std::string &name) {
+    manualBackdrop = name == "auto" ? "" : name;
+    savePreferences();
+    applyBackdrop(manualBackdrop.empty()
+                      ? (channelBackdrop.empty()
+                             ? automaticBackdrop(doc.channel, backdropNames)
+                             : channelBackdrop)
+                      : manualBackdrop);
+    if (!manualBackdrop.empty() && sendComicFormatting &&
+        !doc.channel.empty() && operators.count(casefold(doc.nick)))
+      irc.send("PRIVMSG " + doc.channel + " :# BDrop2: " + doc.backdrop +
+               ".bgb,");
+  }
   void updatePreview() {
     auto em = selected;
     if (em.emotion == 0)
@@ -908,8 +1004,12 @@ class Window : public dx::GpuWindow {
     ++stateSerial;
     auto backgroundChoice =
         std::find(backdropNames.begin(), backdropNames.end(), doc.backdrop);
-    if (backgroundChoice != backdropNames.end())
-      backdrop.value(backgroundChoice - backdropNames.begin());
+    if (manualBackdrop.empty()) {
+      std::string label = "Automatic (" + doc.backdrop + ")";
+      backdrop.replace(0, label.c_str());
+      backdrop.value(0);
+    } else if (backgroundChoice != backdropNames.end())
+      backdrop.value(backgroundChoice - backdropNames.begin() + 1);
     doc.font = currentFont();
     doc.fontSize = std::clamp(dx::size, 14, 20);
     page.update(doc, art, currentFont(), std::clamp(dx::size, 14, 20));
@@ -929,7 +1029,7 @@ class Window : public dx::GpuWindow {
                      std::clamp(dx::size, 14, 20));
   }
   void announce(const std::string &target) {
-    if (!target.empty())
+    if (sendComicFormatting && !target.empty())
       irc.send("PRIVMSG " + target + " :# Appears as " + doc.character);
   }
   void process(const std::string &line) {
@@ -948,11 +1048,15 @@ class Window : public dx::GpuWindow {
                casefold(p.args[0]) == casefold(doc.channel)) {
       users.insert(nick);
       if (key == casefold(doc.nick)) {
+        channelBackdrop = automaticBackdrop(doc.channel, backdropNames);
+        applyBackdrop(manualBackdrop.empty() ? channelBackdrop : manualBackdrop,
+                      true);
         announce(doc.channel);
         info("Joined " + doc.channel);
       }
       updateMembers();
-    } else if (p.command == "353" && p.args.size() >= 4) {
+    } else if (p.command == "353" && p.args.size() >= 4 &&
+               casefold(p.args[2]) == casefold(doc.channel)) {
       std::istringstream words(p.args.back());
       std::string name;
       while (words >> name) {
@@ -1032,10 +1136,9 @@ class Window : public dx::GpuWindow {
           name.erase(0, name.find_first_not_of(' '));
           name = name.substr(0, name.find_first_of("., "));
           if (art.catalog()["backdrops"].contains(name)) {
-            doc.backdrop = name;
-            auto it =
-                std::find(backdropNames.begin(), backdropNames.end(), name);
-            backdrop.value(it - backdropNames.begin());
+            channelBackdrop = name;
+            if (manualBackdrop.empty())
+              applyBackdrop(name);
           }
         }
         return;
@@ -1121,6 +1224,7 @@ class Window : public dx::GpuWindow {
       irc.connect(c);
       doc.nick = c.nick;
       doc.channel = c.channel;
+      channelBackdrop.clear();
       users.clear();
       operators.clear();
       registered = false;
@@ -1145,6 +1249,40 @@ class Window : public dx::GpuWindow {
            "/names, /list, /who, /whois, /whowas, /invite, /kick nick "
            "[reason], /away [text], /back, /raw, /quit [reason], /disconnect, "
            "/connect, /clear. Use // for a literal slash.");
+      appendText("Local options: /format on|off, /backdrop auto|name, /balloon "
+                 "speech|whisper|thought|shout|action");
+      done();
+      return;
+    }
+    if (name == "balloon") {
+      const std::vector<std::string> types{"speech", "whisper", "thought",
+                                           "shout", "action"};
+      auto found = std::find(types.begin(), types.end(), casefold(args));
+      if (found == types.end()) {
+        info("Use /balloon speech, whisper, thought, shout or action.");
+        return;
+      }
+      balloonType.value(found - types.begin());
+      savePreferences();
+      done();
+      return;
+    }
+    if (name == "format") {
+      if (args != "on" && args != "off") {
+        info("Use /format on or /format off.");
+        return;
+      }
+      setFormatting(args == "on");
+      done();
+      return;
+    }
+    if (name == "backdrop") {
+      args = casefold(args);
+      if (args != "auto" && !art.catalog()["backdrops"].contains(args)) {
+        info("Use /backdrop auto or a name from the Backdrop list.");
+        return;
+      }
+      chooseBackdrop(args);
       done();
       return;
     }
@@ -1230,6 +1368,7 @@ class Window : public dx::GpuWindow {
       }
       if (transmit("JOIN " + args)) {
         doc.channel = channel;
+        channelBackdrop.clear();
         queryTarget.clear();
         users.clear();
         operators.clear();
@@ -1263,6 +1402,7 @@ class Window : public dx::GpuWindow {
         wire += " :" + args;
       if (transmit(wire) && protocol == "PART" && channel == doc.channel) {
         doc.channel.clear();
+        channelBackdrop.clear();
         users.clear();
         operators.clear();
         updateMembers();
@@ -1311,13 +1451,17 @@ class Window : public dx::GpuWindow {
     Expression e = selected;
     if (e.emotion == 0)
       e = infer(value);
+    e.mode = balloonType.value() + 1;
+    if (name == "say" && input.value()[0] == '/' && input.value()[1] != '/')
+      e.mode = 1;
     if (protocol == "ME")
       e.mode = 5;
     if (protocol == "THINK")
       e.mode = 3;
     Message m{doc.nick, value, doc.character, e};
     auto pose = art.pose(m.character, m.expression);
-    auto wire = "PRIVMSG " + target + " :" + annotate(m, pose);
+    auto wire = "PRIVMSG " + target + " :" +
+                messagePayload(m, pose, sendComicFormatting);
     if (!irc.send(wire)) {
       info("Message too long (IRC permits 510 bytes per line), or send queue "
            "is full.");
@@ -1373,13 +1517,10 @@ class Window : public dx::GpuWindow {
       if (irc.connected())
         announce(doc.channel);
     } else if (w == &backdrop) {
-      doc.backdrop = backdropNames[backdrop.value()];
-      if (!doc.panels.empty())
-        doc.panels.back().backdrop = doc.backdrop;
-      sync();
-      if (operators.count(casefold(doc.nick)))
-        irc.send("PRIVMSG " + doc.channel + " :# BDrop2: " + doc.backdrop +
-                 ".bgb,");
+      chooseBackdrop(
+          backdrop.value() == 0 ? "auto" : backdropNames[backdrop.value() - 1]);
+    } else if (w == &balloonType) {
+      savePreferences();
     } else if (w == &expression) {
       selected.emotion = expression.value();
       selected.intensity = selected.emotion == 9 ? 0 : .8;
@@ -1409,6 +1550,8 @@ class Window : public dx::GpuWindow {
         info("Disconnected");
       } else if (cmd == "File/Quit")
         hide();
+      else if (cmd == "Options/Send Comic Chat formatting")
+        setFormatting(menu.mvalue()->value());
       else if (cmd == "View/Comic or text")
         action(&textButton);
       else if (cmd == "View/3D view")
@@ -1453,6 +1596,7 @@ class Window : public dx::GpuWindow {
               art.pose(m.character, m.expression);
           }
           doc = std::move(candidate);
+          restoreBackdropOverride();
           seedText();
           sync();
         }
@@ -1543,6 +1687,11 @@ class Window : public dx::GpuWindow {
         auto snapshot = doc.json();
         std::unique_ptr<char, decltype(&std::free)> outputText(
             transcript.text(), &std::free);
+        snapshot["chat_options"] = {
+            {"send_comic_formatting", sendComicFormatting},
+            {"manual_backdrop", manualBackdrop},
+            {"backdrop", doc.backdrop},
+            {"balloon_mode", balloonType.value() + 1}};
         snapshot["text_output"] =
             outputText ? std::string(outputText.get()) : std::string();
         auto m = domeMode.snapshot();
@@ -1617,26 +1766,38 @@ public:
           std::pair{"View/3D view", 0}, std::pair{"View/Reset 3D camera", 0},
           std::pair{"Help/About", 0}})
       menu.add(item.first, item.second, callback, this);
+    menu.add("Options/Send Comic Chat formatting", 0, callback, this,
+             FL_MENU_TOGGLE | FL_MENU_VALUE);
     if (dx::dome())
       menu.hide();
     characterNames = art.characters();
     backdropNames = art.backdrops();
     for (auto &name : characterNames)
       character.add(name.c_str());
+    backdrop.add("Automatic");
     for (auto &name : backdropNames)
       backdrop.add(name.c_str());
     character.value(
         std::find(characterNames.begin(), characterNames.end(), doc.character) -
         characterNames.begin());
-    backdrop.value(
-        std::find(backdropNames.begin(), backdropNames.end(), doc.backdrop) -
-        backdropNames.begin());
+    backdrop.value(0);
+    backdrop.tooltip("Automatic selects a backdrop on channel entry. A named "
+                     "choice overrides automatic and remote changes until "
+                     "Automatic is selected again.");
+    for (auto label : {"Speech", "Whisper", "Thought", "Shout", "Action"})
+      balloonType.add(label);
+    balloonType.value(0);
+    balloonType.tooltip("Balloon type. Use /msg or /query to send privately; a "
+                        "whisper balloon changes appearance.");
+    loadPreferences();
+    updateFormattingMenu();
+    restoreBackdropOverride();
     for (auto e : emotions)
       expression.add(e);
     expression.value(0);
-    for (auto *w : std::vector<Fl_Widget *>{&connectButton, &sendButton, &input,
-                                            &textButton, &xrButton, &character,
-                                            &backdrop, &expression})
+    for (auto *w : std::vector<Fl_Widget *>{
+             &connectButton, &sendButton, &input, &textButton, &xrButton,
+             &character, &backdrop, &expression, &balloonType})
       w->callback(callback, this);
     input.when(FL_WHEN_ENTER_KEY_ALWAYS);
     input.tooltip("Enter sends; /join #channel, /me action, /think thought, "
@@ -1721,7 +1882,8 @@ public:
                    std::max(100, (bottom - top) / 3 - 8));
     wheel.resize(right, bottom - 206, 224, 170);
     expression.resize(right + 72, bottom - 28, 152, 28);
-    input.resize(8, h - 70, right - 16, 34);
+    balloonType.resize(8, h - 70, 120, 34);
+    input.resize(136, h - 70, right - 144, 34);
     sendButton.resize(right, h - 70, 224, 34);
     status.resize(8, h - 28, w - 16, 24);
   }

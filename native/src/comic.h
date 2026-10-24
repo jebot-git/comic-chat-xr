@@ -83,7 +83,7 @@ public:
 constexpr int PANEL = 480;
 Layout layout(const Panel &, Art &);
 struct BalloonMetrics {
-  double width, height;
+  double width, height, lastLineWidth = 0;
 };
 BalloonMetrics measureBalloon(const std::string &, const std::string &font,
                               int fontSize);

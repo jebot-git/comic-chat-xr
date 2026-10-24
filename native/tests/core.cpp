@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "comic.h"
+#include "chat-policy.h"
 #include "gltf-model.h"
 #include "irc-output.h"
 #include "irc-command.h"
@@ -13,6 +14,16 @@
 int main(int argc, char **argv) {
   using namespace comic;
   assert(argc == 3);
+  assert(automaticBackdrop("#SPACE", {"room", "space", "field"}) == "space");
+  assert(automaticBackdrop("#unknown", {"room", "space"}) == automaticBackdrop("#UNKNOWN", {"room", "space"}));
+  Message plainMessage{"A", "Message without metadata", "anna", {}};
+  assert(messagePayload(plainMessage, {}, false) == plainMessage.text);
+  plainMessage.expression.mode = 3;
+  assert(messagePayload(plainMessage, {}, false) == "\1" "ACTION thinks Message without metadata\1");
+  plainMessage.expression.mode = 5;
+  assert(messagePayload(plainMessage, {}, false) == "\1" "ACTION Message without metadata\1");
+  assert(messagePayload(plainMessage, {}, true).rfind("(#G", 0) == 0);
+
   assert(inputCommand("//literal").args == "/literal");
   assert(inputCommand("/WHOIS   Anna").name == "whois");
   assert(inputCommand("/WHOIS   Anna").args == "Anna");
@@ -132,6 +143,10 @@ int main(int argc, char **argv) {
   Document doc;
   doc.demo();
   assert(doc.panels.size() == 2);
+  Document emptyRoom;
+  emptyRoom.panels.push_back({{}, "space"});
+  Document restoredRoom; restoredRoom.load(emptyRoom.json());
+  assert(restoredRoom.json() == emptyRoom.json() && restoredRoom.backdrop == "space");
   auto serialized = doc.json();
   Document other;
   other.load(serialized);
@@ -143,36 +158,78 @@ int main(int argc, char **argv) {
   auto verifyTailClearance = [](const Rendered &rendered) {
     int scale = rendered.tails.w / PANEL;
     for (const auto &actor : rendered.layout.actors)
-      for (int y = std::max(0, int(actor.y)); y < std::min(PANEL, int(actor.y + actor.h)); ++y)
-        for (int x = std::max(0, int(actor.x)); x < std::min(PANEL, int(actor.x + actor.w)); ++x) {
-          int sx = std::clamp(int((x+.5-actor.x)/actor.w*actor.pose.image->w), 0, actor.pose.image->w-1);
-          int sy = std::clamp(int((y+.5-actor.y)/actor.h*actor.pose.image->h), 0, actor.pose.image->h-1);
-          if (actor.pose.image->rgba[(size_t(sy)*actor.pose.image->w+sx)*4+3] < 128) continue;
+      for (int y = std::max(0, int(actor.y));
+           y < std::min(PANEL, int(actor.y + actor.h)); ++y)
+        for (int x = std::max(0, int(actor.x));
+             x < std::min(PANEL, int(actor.x + actor.w)); ++x) {
+          int sx = std::clamp(
+              int((x + .5 - actor.x) / actor.w * actor.pose.image->w), 0,
+              actor.pose.image->w - 1);
+          int sy = std::clamp(
+              int((y + .5 - actor.y) / actor.h * actor.pose.image->h), 0,
+              actor.pose.image->h - 1);
+          if (actor.pose.image
+                  ->rgba[(size_t(sy) * actor.pose.image->w + sx) * 4 + 3] < 128)
+            continue;
           for (int dy = 0; dy < scale; ++dy)
             for (int dx = 0; dx < scale; ++dx)
-              assert(rendered.tails.rgba[(size_t(y*scale+dy)*rendered.tails.w+x*scale+dx)*4+3] == 0);
+              assert(rendered.tails
+                         .rgba[(size_t(y * scale + dy) * rendered.tails.w +
+                                x * scale + dx) *
+                                   4 +
+                               3] == 0);
         }
   };
   verifyTailClearance(panel);
   // Normal, whisper, thought, shout and action modes retain their own routing;
   // mirrored participants must not have a tail drawn through either silhouette.
-  for (int mode : {1,2,3,4,5}) {
+  auto alphaBounds = [](const Image &image) {
+    std::array<int, 4> bounds{image.w, image.h, -1, -1};
+    for (int y = 0; y < image.h; ++y)
+      for (int x = 0; x < image.w; ++x)
+        if (image.rgba[(size_t(y) * image.w + x) * 4 + 3] >= 128) {
+          bounds[0] = std::min(bounds[0], x);
+          bounds[1] = std::min(bounds[1], y);
+          bounds[2] = std::max(bounds[2], x);
+          bounds[3] = std::max(bounds[3], y);
+        }
+    return bounds;
+  };
+  std::set<std::vector<unsigned char>> balloonStyles;
+  for (int mode : {1, 2, 3, 4, 5}) {
     auto p = doc.panels.back();
-    for (auto &m : p.messages) m.expression.mode = mode;
+    for (auto &m : p.messages)
+      m.expression.mode = mode;
     auto routed = render(p, art, "monospace", 24, 3);
     verifyTailClearance(routed);
+    auto desktopStyle = render(p, art, "monospace", 24, 1);
+    auto low = alphaBounds(desktopStyle.balloons),
+         high = alphaBounds(routed.balloons);
+    for (int axis = 0; axis < 4; ++axis) {
+      if (std::abs(low[axis] - high[axis] / 3.) >= (mode == 4 ? 3 : 2))
+        std::cerr << "Balloon scale bounds mode=" << mode << " axis=" << axis
+                  << " desktop=" << low[axis] << " xr=" << high[axis] / 3.
+                  << "\n";
+      assert(std::abs(low[axis] - high[axis] / 3.) < (mode == 4 ? 3 : 2));
+    }
+    balloonStyles.insert(desktopStyle.balloons.rgba);
+
     size_t visible = 0;
     for (size_t i = 3; i < routed.tails.rgba.size(); i += 4)
       visible += routed.tails.rgba[i] != 0;
     assert(mode == 5 ? visible == 0 : visible > 10);
     routed.panel.save(qa / ("tail-mode-" + std::to_string(mode) + ".png"));
   }
+  assert(balloonStyles.size() == 5);
   Panel curvePanel{{Message{"Anna", "Curved tail", "anna", {}}}, "room"};
   auto curved = render(curvePanel, art);
   auto centerAt = [&](int y) {
     double sum = 0, count = 0;
     for (int x = 0; x < PANEL; ++x)
-      if (curved.tails.rgba[(y*PANEL+x)*4+3] >= 128) { sum += x; ++count; }
+      if (curved.tails.rgba[(y * PANEL + x) * 4 + 3] >= 128) {
+        sum += x;
+        ++count;
+      }
     assert(count > 0);
     return sum/count;
   };

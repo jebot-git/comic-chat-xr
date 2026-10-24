@@ -76,6 +76,39 @@ Incoming backdrop changes require a known channel operator. Local backdrop
 selection remains available. Transcripts preserve expression/pose metadata and
 can be saved/reopened using File.
 
+## Channel backdrops, outgoing formatting and balloon types
+
+The Backdrop list defaults to **Automatic**. On a confirmed channel JOIN the
+client opens a new panel with a channel-selected backdrop: a channel named after
+bundled art uses that art, and other names map consistently to an available
+backdrop. Known backdrop announcements from channel operators can update it.
+A named user choice overrides automatic assignment and remote announcements,
+including on later channel entries. Select Automatic (or `/backdrop auto`) to
+restore channel-driven selection, including the latest known room announcement.
+Earlier channel panels retain their art.
+
+**Options → Send Comic Chat formatting** controls outgoing `(#G…E…RM…)`,
+`# Appears as`, and backdrop announcements. Turn it off (or use `/format off`)
+to send ordinary IRC text while retaining local characters, expressions and
+balloons. Actions use standard CTCP ACTION; thoughts become “thinks …” actions.
+Incoming Comic Chat formatting is still understood. `/format on` restores it.
+
+The type selector beside the composer offers **Speech, Whisper, Thought,
+Shout, and Action**. Speech contours follow the text-line envelope with the
+original Woodring spline basis and alternating wavies; whispers have a dashed
+contour with a white halo and italic text; thoughts use the speech cloud and trailing dots; shouts
+use a jagged contour; actions use a tail-free, left-aligned rectangular caption
+as in the original `CBWoodringBox`. The session font remains in use. `/balloon
+speech|whisper|thought|shout|action` selects the same types; `/me` and `/think`
+override the type for one message. A whisper type changes appearance; `/msg`
+and `/query` choose a private recipient.
+
+These choices persist in `$XDG_CONFIG_HOME/comic-chat-xr/preferences.json`
+(default `~/.config/comic-chat-xr/preferences.json`). A manual backdrop also
+applies to the active panel when a saved transcript is opened. The native
+contours follow the original text-fitting design; the full historical randomized
+layout/route-region expert system remains outside this port.
+
 ## glTF and the dome
 
 Each selected character pose becomes a genuine closed silhouette mesh:
@@ -144,8 +177,9 @@ pixel-art sampling. Balloon type grows toward 24 logical pixels when the
 measured panel has room, retaining the configured font and falling back toward
 the original size for dense panels so enlarged messages stay within the existing
 balloon band.
-XR font enlargement and raster density do not alter desktop typography. Headset eye resolution and
-window texture density still limit the final angular text detail.
+XR font enlargement and raster density do not alter desktop typography. Pango
+line metrics stay in logical panel units at every raster density. Headset eye
+resolution and window texture density still limit the final angular text detail.
 
 Normal and whisper tails use offset entries and shallow paired curves based on
 `CBWoodringNormal::AddArrow`'s five-percent bow in the original renderer. Tail

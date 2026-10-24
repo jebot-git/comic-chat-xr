@@ -1,0 +1,3 @@
+Native FLTK session integration from de-xr fsv-xr commit 2a3d28c95b8db4890a70f0db57318adac2d5b289.
+SPDX-License-Identifier: MIT
+See ../third_party/LICENSE.native-graphics for the native graphics adapter notice.

@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=Comic Chat XR
+Comment=Original Microsoft Comic Chat art on desktop and in DomeD XR
+Exec=comic-chat-xr
+Icon=comic-chat-xr
+Terminal=false
+Categories=Network;IRCClient;Chat;
+StartupWMClass=org.de_xr.ComicChat.Sbs
+Actions=Desktop;XR;
+
+[Desktop Action Desktop]
+Name=Launch on desktop
+Exec=comic-chat-xr --realm desktop
+
+[Desktop Action XR]
+Name=Launch in XR
+Exec=comic-chat-xr --realm xr

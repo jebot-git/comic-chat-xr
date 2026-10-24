@@ -1,5 +1,10 @@
 # Microsoft Comic Chat
 
+> **de-xr native port:** see [native/README.md](native/README.md) for the Linux
+> FLTK client, original-art glTF cutouts, layered parallax backdrops, build
+> commands and current compatibility limits. Historical Windows source remains
+> available below as the upstream reference.
+
 Microsoft Comic Chat is a Microsoft-developed Internet Relay Chat (IRC) chat client released in 1996 that rendered conversations as automatically generated comic strips. Instead of plain text, users communicated through cartoon avatars with messages displayed in speech bubbles inside dynamically composed comic panels. The application used an expert system to determine character placement, gestures, facial expressions, balloon shape, and panel layout in real time. It shipped as part of Internet Explorer 3.0 and was later bundled with Windows 98 and MSN before being discontinued in the early 2000s.
 
 ![Comic Chat](v1.0-pre/client/readme.gif)

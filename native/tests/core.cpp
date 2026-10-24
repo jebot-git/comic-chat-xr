@@ -1,0 +1,228 @@
+// SPDX-License-Identifier: MIT
+#include "comic.h"
+#include "gltf-model.h"
+#include "scene-placement.h"
+#include "window-stereo.h"
+#include <cassert>
+#include <cmath>
+#include <fstream>
+#include <iostream>
+#include <set>
+int main(int argc, char **argv) {
+  using namespace comic;
+  assert(argc == 3);
+  {
+    using namespace fsv::gltf;
+    Vec3 left{-.032f, .025f, .1f}, right{.032f, .025f, .1f};
+    auto l = windowEyeProjection(left, 1.2f, .8f, 2);
+    auto r = windowEyeProjection(right, 1.2f, .8f, 2);
+    for (auto p : {Vec3{0, 1.6f, -2}, Vec3{.2f, 1.7f, -2}}) {
+      assert(length(point(l, p) - point(r, p)) < 1e-5f);
+    }
+    auto nearL = point(l, {0, 1.6f, -1.8f}), nearR = point(r, {0, 1.6f, -1.8f});
+    auto farL = point(l, {0, 1.6f, -4}), farR = point(r, {0, 1.6f, -4});
+    assert(nearL.x > nearR.x && farL.x < farR.x);
+    assert(std::abs(farL.y - farR.y) < 1e-5f);
+    bool rejected = false;
+    try {
+      windowEyeProjection({0, 0, -2}, 1, 1, 2);
+    } catch (...) {
+      rejected = true;
+    }
+    assert(rejected);
+  }
+  Art art(argv[1]);
+  fs::path qa = argv[2];
+  fs::create_directories(qa);
+  assert(art.characters().size() == 31);
+  assert(art.backdrops().size() == 7);
+  size_t poses = 0;
+  for (auto &name : art.characters())
+    for (int e = 1; e <= 17; ++e)
+      for (float intensity : {0.f, .5f, 1.f}) {
+        Expression expression;
+        expression.emotion = e;
+        expression.intensity = intensity;
+        auto p = art.pose(name, expression),
+             flip = art.pose(name, expression, true);
+        assert(p.image->w > 0 && p.image->h > 0);
+        assert(p.image->rgba.size() == size_t(p.image->w) * p.image->h * 4);
+        assert(flip.image->w == p.image->w);
+        bool opaque = false, transparent = false;
+        for (size_t i = 3; i < p.image->rgba.size(); i += 4) {
+          opaque |= p.image->rgba[i] == 255;
+          transparent |= p.image->rgba[i] == 0;
+        }
+        assert(opaque);
+        assert(transparent);
+        ++poses;
+      }
+  for (auto &name : art.backdrops()) {
+    auto b = art.backdrop(name);
+    assert(b->w > 0 && b->h > 0);
+  }
+  Expression e;
+  e.emotion = 8;
+  e.intensity = .8;
+  Message m{"Anna", "Hello, 世界 👋", "anna", e};
+  auto pose = art.pose("anna", e);
+  auto wire = annotate(m, pose);
+  Expression parsed;
+  auto text = parseAnnotations(wire, parsed);
+  assert(text == m.text && parsed.cooked && parsed.face == pose.face &&
+         parsed.torso == pose.torso);
+  assert(art.pose("anna", parsed).image->rgba == pose.image->rgba);
+  for (auto bad : {"(#G) test", "(#G000EzzzRM1) invalid",
+                   "(#G000E111RM9) invalid", "(#Unknown) message"}) {
+    Expression x;
+    assert(parseAnnotations(bad, x) == bad && !x.cooked);
+  }
+  auto ping = parseIrc("PING :one two");
+  assert(ping.command == "PING" && ping.args.size() == 1 &&
+         ping.args[0] == "one two");
+  auto irc = parseIrc("@time=x :Anna!a@host PRIVMSG #room :Hello there");
+  assert(irc.prefix == "Anna!a@host" && irc.args[1] == "Hello there");
+  assert(casefold("NICK[\\^") == "nick{|~");
+  assert(plain("a\r\nb") == "ab");
+  Document doc;
+  doc.demo();
+  assert(doc.panels.size() == 2);
+  auto serialized = doc.json();
+  Document other;
+  other.load(serialized);
+  assert(other.json() == serialized);
+  auto panel = render(doc.panels.back(), art);
+  assert(panel.layout.actors.size() == 2);
+  assert(panel.layout.actors[0].x < panel.layout.actors[1].x);
+  panel.panel.save(qa / "comic-panel.png");
+  exportScene(doc.panels.back(), art, qa / "scene.glb");
+  auto gltf = fsv::gltf::load(qa / "scene.glb");
+  assert(gltf->images.size() == 6);
+  auto frame = gltf->evaluate(0);
+  assert(frame.draws.size() == 6);
+  assert(std::abs(frame.draws[0].world[14] + 7.f) < .00001);
+  assert(std::abs(frame.draws[1].world[14] + 4.6f) < .00001);
+  assert(std::abs(frame.draws[2].world[14] + 3.2f) < .00001);
+  assert(frame.draws[0].primitive->vertices.size() == 4 &&
+         frame.draws[2].primitive->vertices.size() == 4);
+  float zmin = 1e20, zmax = -1e20;
+  size_t vertices = 0;
+  for (auto &v : frame.draws[3].primitive->vertices) {
+    zmin = std::min(zmin, v.position.z);
+    zmax = std::max(zmax, v.position.z);
+    if (std::abs(v.normal.z) < .5f) {
+      auto &image = gltf->images[3];
+      int x = std::clamp(int(v.uv[0] * image.width), 0, image.width - 1);
+      int y = std::clamp(int(v.uv[1] * image.height), 0, image.height - 1);
+      assert(image.rgba[(size_t(y) * image.width + x) * 4 + 3] >= 128);
+    }
+    ++vertices;
+  }
+  assert(std::abs(zmax - zmin - .035f) < .00001);
+  assert(vertices > 100);
+  exportCharacter("anna", e, art, qa / "anna.glb");
+  auto standalone = fsv::gltf::load(qa / "anna.glb");
+  assert(standalone->evaluate(0).draws.size() == 1);
+  assert(std::abs((standalone->bounds.max.y - standalone->bounds.min.y) -
+                  1.65f) < .00001);
+  assert(infer(">:(").emotion == 6);
+  auto names = art.characters();
+  for (auto &name : names) {
+    auto p = art.pose(name, e);
+    Message m{"Test", "Original wire state", name, e};
+    Expression decoded;
+    parseAnnotations(annotate(m, p), decoded);
+    assert(art.pose(name, decoded).image->rgba == p.image->rgba);
+  }
+  // The portable reference plane follows the same opening pose and distance
+  // as DomeD's pulled-out windows, without scaling mesh thickness or parallax.
+  {
+    using namespace fsv::gltf;
+    ScenePlacement placement;
+    DomeMode mode;
+    mode.managed = mode.known = mode.xr = true;
+    mode.pulloutDistance = 1.2f;
+    fsv::gltf::Pose head{
+        {1, 1.8f, 3}, {0, std::sqrt(.5f), 0, std::sqrt(.5f)}, 1};
+    auto root = placement.root(mode, head);
+    auto centre = point(root, {0, 1.6f, -2});
+    assert(length(centre - Vec3{-.2f, 1.74f, 3}) < .00001);
+    assert(placement.root(mode, fsv::gltf::Pose{{9, 9, 9}, {}, 1}).v == root.v);
+    mode.pulloutDistance = 3;
+    centre = point(placement.root(mode, head), {0, 1.6f, -2});
+    assert(length(centre - Vec3{-2, 1.74f, 3}) < .00001);
+    mode.hasPulloutAnchor = true;
+    mode.pulloutPosition = {-.5f, 1.65f, .75f};
+    mode.pulloutOrientation = {0, 1, 0, 0};
+    mode.pulloutDistance = .9f;
+    root = placement.root(mode, head);
+    centre = point(root, {0, 1.6f, -2});
+    assert(length(centre - Vec3{-.5f, 1.59f, 1.65f}) < .00001);
+    assert(std::abs(length(vector(root, {0, 0, .035f})) - .035f) < .00001);
+    assert(std::abs(length(point(root, {0, 1.6f, -3.2f}) - centre) - 1.2f) <
+           .00001);
+  }
+  // A repeated speaker's expression must not disappear inside a single actor.
+  Document changing;
+  changing.add({"A", "Happy", "anna", infer(":)")});
+  changing.add({"A", "Sad", "anna", infer(":(")});
+  assert(changing.panels.size() == 2);
+  // Entire UTF-8 messages survive balloon pagination and transcript round
+  // trips.
+  Document longComic;
+  std::string original;
+  for (int i = 0; i < 120; ++i)
+    original += "Hello 世界 👋 ";
+  longComic.add({"Unicode", original, "anna", {}});
+  std::string reconstructed;
+  for (auto &p : longComic.panels) {
+    assert(balloonsFit(p, longComic.font, longComic.fontSize));
+    for (auto &m : p.messages)
+      reconstructed += m.text;
+  }
+  assert(reconstructed == original && longComic.panels.size() > 1);
+  Document reloaded;
+  reloaded.load(longComic.json());
+  std::ofstream(qa / "long-before.json") << longComic.json().dump(2);
+  std::ofstream(qa / "long-after.json") << reloaded.json().dump(2);
+  assert(reloaded.json() == longComic.json());
+  auto before = doc.json();
+  auto malformed = before;
+  malformed["panels"][1]["messages"][0]["text"] = Json::array();
+  try {
+    doc.load(malformed);
+    assert(false);
+  } catch (const Json::exception &) {
+  }
+  assert(doc.json() == before);
+  // All layers reconstruct every original source pixel exactly at the reference
+  // eye.
+  for (auto &name : art.backdrops()) {
+    auto original = art.backdrop(name);
+    Image combined(original->w, original->h);
+    auto &layers = art.catalog()["backdrops"][name]["layers"];
+    assert(layers.size() == 3);
+    float previous = 100;
+    for (auto &layer : layers) {
+      float depth = layer["depth"];
+      assert(depth < previous && depth > 2);
+      previous = depth;
+      combined.over(*art.image(layer["image"]), 0, 0);
+    }
+    assert(combined.rgba == original->rgba);
+  }
+  // All expression states can become valid glTF, including gestures and
+  // mirrored bodies.
+  for (int e : {1, 5, 6, 8, 9, 10, 14, 17}) {
+    Panel p = {{{"A", "Expression " + std::to_string(e), "anna", Expression{}}},
+               "space"};
+    p.messages[0].expression.emotion = e;
+    p.messages[0].expression.intensity = 1;
+    exportScene(p, art, qa / "expressions.glb");
+    auto loaded = fsv::gltf::load(qa / "expressions.glb");
+    assert(loaded->evaluate(0).draws.size() == 5);
+  }
+  std::cout << "PASS " << poses
+            << " pose selections; 31 original characters; 7 original "
+               "backdrops; annotations; layout; GLB geometry; expressions\n";
+}

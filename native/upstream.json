@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/microsoft/comic-chat",
+  "commit": "48a162249484ab8d116c243e8203b0956d350c09",
+  "source": "v2.5-beta-1-modern",
+  "license": "MIT",
+  "suite_source": "https://github.com/jebot-git/fsv-xr",
+  "suite_commit": "2a3d28c95b8db4890a70f0db57318adac2d5b289"
+}

@@ -441,3 +441,8 @@ FodyWeavers.xsd
 *.msm
 *.msp
 .gstack/
+
+# de-xr native outputs
+/build-native*/
+/stage-native/
+/native/tests/__pycache__/

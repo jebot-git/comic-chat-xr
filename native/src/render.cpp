@@ -87,8 +87,107 @@ void woodring(cairo_t *cr, const std::vector<std::array<double, 2>> &points) {
   }
   cairo_close_path(cr);
 }
+// Balloon tails use the original CBWoodringNormal::AddArrow's shallow
+// five-percent arc bow, represented as quadratic curves in Cairo. Routes stop
+// before the first opaque character pixel, including a small outline clearance.
+struct TailPoint {
+  double x, y;
+};
+TailPoint curvePoint(TailPoint a, TailPoint c, TailPoint b, double t) {
+  double u = 1 - t;
+  return {u * u * a.x + 2 * u * t * c.x + t * t * b.x,
+          u * u * a.y + 2 * u * t * c.y + t * t * b.y};
+}
+TailPoint curveControl(TailPoint a, TailPoint b, double sign) {
+  return {(a.x + b.x) / 2 - sign * .1 * (b.y - a.y),
+          (a.y + b.y) / 2 + sign * .1 * (b.x - a.x)};
+}
+void curveTo(cairo_t *cr, TailPoint a, TailPoint b, double sign) {
+  auto c = curveControl(a, b, sign);
+  cairo_curve_to(cr, a.x + 2 * (c.x - a.x) / 3, a.y + 2 * (c.y - a.y) / 3,
+                 b.x + 2 * (c.x - b.x) / 3, b.y + 2 * (c.y - b.y) / 3, b.x,
+                 b.y);
+}
+std::vector<unsigned char> characterMask(const Layout &layout) {
+  std::vector<unsigned char> occupied(PANEL * PANEL), expanded(PANEL * PANEL);
+  for (const auto &a : layout.actors)
+    for (int y = std::max(0, int(a.y));
+         y < std::min(PANEL, int(std::ceil(a.y + a.h))); ++y)
+      for (int x = std::max(0, int(a.x));
+           x < std::min(PANEL, int(std::ceil(a.x + a.w))); ++x) {
+        int sx = std::clamp(int((x + .5 - a.x) / a.w * a.pose.image->w), 0,
+                            a.pose.image->w - 1);
+        int sy = std::clamp(int((y + .5 - a.y) / a.h * a.pose.image->h), 0,
+                            a.pose.image->h - 1);
+        if (a.pose.image->rgba[(size_t(sy) * a.pose.image->w + sx) * 4 + 3] >=
+            64)
+          occupied[y * PANEL + x] = 1;
+      }
+  for (int y = 0; y < PANEL; ++y)
+    for (int x = 0; x < PANEL; ++x)
+      if (occupied[y * PANEL + x])
+        for (int dy = -4; dy <= 4; ++dy)
+          for (int dx = -4; dx <= 4; ++dx)
+            if (x + dx >= 0 && x + dx < PANEL && y + dy >= 0 && y + dy < PANEL)
+              expanded[(y + dy) * PANEL + x + dx] = 1;
+  return expanded;
+}
+bool drawTail(cairo_t *cr, double y, double h, int mode, double base,
+              TailPoint target, const std::vector<unsigned char> &mask) {
+  if (mode == 5)
+    return false;
+  TailPoint start{base, y + h - 6};
+  double sign = target.x >= start.x ? 1 : -1;
+  auto control = curveControl(start, target, sign);
+  TailPoint tip = target;
+  double length = std::hypot(target.x - start.x, target.y - start.y);
+  int steps = std::max(1, int(std::ceil(length * 2)));
+  for (int i = 0; i <= steps; ++i) {
+    auto p = curvePoint(start, control, target, double(i) / steps);
+    int px = std::clamp(int(p.x), 0, PANEL - 1),
+        py = std::clamp(int(p.y), 0, PANEL - 1);
+    if (mask[py * PANEL + px]) {
+      tip = curvePoint(start, control, target, std::max(0., (i - 8.) / steps));
+      break;
+    }
+  }
+  if (std::hypot(tip.x - start.x, tip.y - start.y) < 12)
+    return false;
+  cairo_set_line_width(cr, 2);
+  if (mode == 3) {
+    control = curveControl(start, tip, sign);
+    for (int i = 0; i < 3; ++i) {
+      auto p = curvePoint(start, control, tip, (i + 1) / 3.);
+      double radius = 5 - i;
+      ellipse(cr, p.x - radius, p.y - radius, radius * 2, radius * 2);
+      cairo_set_source_rgb(cr, 1, 1, 1);
+      cairo_fill_preserve(cr);
+      cairo_set_source_rgb(cr, 0, 0, 0);
+      cairo_stroke(cr);
+    }
+    return false;
+  }
+  TailPoint left{base - 8, start.y}, right{base + 9, start.y};
+  cairo_move_to(cr, left.x, left.y);
+  curveTo(cr, left, tip, sign);
+  curveTo(cr, tip, right, -sign);
+  cairo_close_path(cr);
+  cairo_set_source_rgb(cr, 1, 1, 1);
+  cairo_fill(cr);
+  cairo_move_to(cr, left.x, left.y);
+  curveTo(cr, left, tip, sign);
+  curveTo(cr, tip, right, -sign);
+  if (mode == 2) {
+    double dash[]{4, 3};
+    cairo_set_dash(cr, dash, 2, 0);
+  }
+  cairo_set_source_rgb(cr, 0, 0, 0);
+  cairo_stroke(cr);
+  cairo_set_dash(cr, nullptr, 0, 0);
+  return true;
+}
 void bubble(cairo_t *cr, double x, double y, double w, double h, int mode,
-            double tailX, double tailY) {
+            double base, bool opening) {
   cairo_new_path(cr);
   cairo_set_line_width(cr, 2);
   cairo_set_source_rgb(cr, 1, 1, 1);
@@ -131,29 +230,22 @@ void bubble(cairo_t *cr, double x, double y, double w, double h, int mode,
   }
   cairo_fill_preserve(cr);
   cairo_set_source_rgb(cr, 0, 0, 0);
-  cairo_stroke(cr);
-  cairo_set_dash(cr, nullptr, 0, 0);
-  if (mode == 3) {
-    for (int i = 0; i < 3; ++i) {
-      double t = (i + 1) / 4.;
-      double cx = (x + w / 2) * (1 - t) + tailX * t,
-             cy = (y + h * .85) * (1 - t) + tailY * t;
-      ellipse(cr, cx - 5 + i, cy - 5 + i, 10 - 2 * i, 10 - 2 * i);
-      cairo_set_source_rgb(cr, 1, 1, 1);
-      cairo_fill_preserve(cr);
-      cairo_set_source_rgb(cr, 0, 0, 0);
-      cairo_stroke(cr);
-    }
-  } else if (mode != 5) {
-    double base = std::clamp(tailX, x + w * .3, x + w * .7);
-    cairo_move_to(cr, base - 8, y + h - 10);
-    cairo_line_to(cr, tailX, tailY);
-    cairo_line_to(cr, base + 9, y + h - 12);
-    cairo_set_source_rgb(cr, 1, 1, 1);
-    cairo_fill_preserve(cr);
-    cairo_set_source_rgb(cr, 0, 0, 0);
-    cairo_stroke(cr);
+  auto *contour = cairo_copy_path(cr);
+  cairo_save(cr);
+  if (opening) {
+    // Leave an opening in the contour rather than a black seam across the tail.
+    cairo_new_path(cr);
+    cairo_rectangle(cr, -PANEL, -PANEL, PANEL * 3, PANEL * 3);
+    cairo_rectangle(cr, base - 8, y + h - 12, 17, 30);
+    cairo_set_fill_rule(cr, CAIRO_FILL_RULE_EVEN_ODD);
+    cairo_clip(cr);
   }
+  cairo_new_path(cr);
+  cairo_append_path(cr, contour);
+  cairo_stroke(cr);
+  cairo_restore(cr);
+  cairo_path_destroy(contour);
+  cairo_set_dash(cr, nullptr, 0, 0);
 }
 void text(cairo_t *cr, const std::string &value, const std::string &font,
           int size, int x, int y, int w, int h) {
@@ -222,8 +314,11 @@ Rendered render(const Panel &panel, Art &art, const std::string &font,
   Rendered out;
   out.layout = layout(panel, art);
   Surface image(PANEL, PANEL),
-      balloons(PANEL * balloonRasterScale, PANEL * balloonRasterScale);
+      balloons(PANEL * balloonRasterScale, PANEL * balloonRasterScale),
+      tails(PANEL * balloonRasterScale, PANEL * balloonRasterScale);
   cairo_scale(balloons.cr, balloonRasterScale, balloonRasterScale);
+  cairo_scale(tails.cr, balloonRasterScale, balloonRasterScale);
+  auto mask = characterMask(out.layout);
   auto backdrop = art.backdrop(panel.backdrop);
   paint(image.cr, *backdrop, 0, 0, PANEL, PANEL);
   for (auto &a : out.layout.actors)
@@ -253,13 +348,27 @@ Rendered render(const Panel &panel, Art &art, const std::string &font,
     int mode = m.expression.mode == 1 && m.expression.emotion == 7
                    ? 4
                    : m.expression.mode;
-    bubble(balloons.cr, x, y, w, h, mode, tailX, tailY);
+    double offset = tailX < PANEL / 2 ? -w * .18 : w * .18;
+    double base = std::clamp(tailX + offset, x + w * .22, x + w * .78);
+    bool opening = drawTail(tails.cr, y, h, mode, base, {tailX, tailY}, mask);
+    bubble(balloons.cr, x, y, w, h, mode, base, opening);
     // Original CBWoodringNormal uppercases balloon text; the avatar identifies
     // its speaker. The text-only view retains nicknames and original casing.
     char *upper = g_utf8_strup(value.c_str(), value.size());
     text(balloons.cr, upper, font, fontSize, x + 18, y + 14, w - 36, h - 28);
     g_free(upper);
   }
+  out.tails = tails.image();
+  // A tail's finite width and thought dots also keep clear of every silhouette.
+  for (int y = 0; y < out.tails.h; ++y)
+    for (int x = 0; x < out.tails.w; ++x)
+      if (mask[(y / balloonRasterScale) * PANEL + x / balloonRasterScale]) {
+        auto i = (size_t(y) * out.tails.w + x) * 4;
+        out.tails.rgba[i] = out.tails.rgba[i + 1] = out.tails.rgba[i + 2] = 255;
+        out.tails.rgba[i + 3] = 0;
+      }
+  cairo_set_operator(balloons.cr, CAIRO_OPERATOR_DEST_OVER);
+  paint(balloons.cr, out.tails, 0, 0, PANEL, PANEL);
   out.balloons = balloons.image();
   paint(image.cr, out.balloons, 0, 0, PANEL, PANEL);
   cairo_rectangle(image.cr, 1, 1, PANEL - 2, PANEL - 2);

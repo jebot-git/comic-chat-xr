@@ -140,6 +140,44 @@ int main(int argc, char **argv) {
   assert(panel.layout.actors.size() == 2);
   assert(panel.layout.actors[0].x < panel.layout.actors[1].x);
   panel.panel.save(qa / "comic-panel.png");
+  auto verifyTailClearance = [](const Rendered &rendered) {
+    int scale = rendered.tails.w / PANEL;
+    for (const auto &actor : rendered.layout.actors)
+      for (int y = std::max(0, int(actor.y)); y < std::min(PANEL, int(actor.y + actor.h)); ++y)
+        for (int x = std::max(0, int(actor.x)); x < std::min(PANEL, int(actor.x + actor.w)); ++x) {
+          int sx = std::clamp(int((x+.5-actor.x)/actor.w*actor.pose.image->w), 0, actor.pose.image->w-1);
+          int sy = std::clamp(int((y+.5-actor.y)/actor.h*actor.pose.image->h), 0, actor.pose.image->h-1);
+          if (actor.pose.image->rgba[(size_t(sy)*actor.pose.image->w+sx)*4+3] < 128) continue;
+          for (int dy = 0; dy < scale; ++dy)
+            for (int dx = 0; dx < scale; ++dx)
+              assert(rendered.tails.rgba[(size_t(y*scale+dy)*rendered.tails.w+x*scale+dx)*4+3] == 0);
+        }
+  };
+  verifyTailClearance(panel);
+  // Normal, whisper, thought, shout and action modes retain their own routing;
+  // mirrored participants must not have a tail drawn through either silhouette.
+  for (int mode : {1,2,3,4,5}) {
+    auto p = doc.panels.back();
+    for (auto &m : p.messages) m.expression.mode = mode;
+    auto routed = render(p, art, "monospace", 24, 3);
+    verifyTailClearance(routed);
+    size_t visible = 0;
+    for (size_t i = 3; i < routed.tails.rgba.size(); i += 4)
+      visible += routed.tails.rgba[i] != 0;
+    assert(mode == 5 ? visible == 0 : visible > 10);
+    routed.panel.save(qa / ("tail-mode-" + std::to_string(mode) + ".png"));
+  }
+  Panel curvePanel{{Message{"Anna", "Curved tail", "anna", {}}}, "room"};
+  auto curved = render(curvePanel, art);
+  auto centerAt = [&](int y) {
+    double sum = 0, count = 0;
+    for (int x = 0; x < PANEL; ++x)
+      if (curved.tails.rgba[(y*PANEL+x)*4+3] >= 128) { sum += x; ++count; }
+    assert(count > 0);
+    return sum/count;
+  };
+  assert(std::abs(centerAt(130) - (centerAt(80)+centerAt(180))/2) > .5);
+
   exportScene(doc.panels.back(), art, qa / "scene.glb");
   auto gltf = fsv::gltf::load(qa / "scene.glb");
   assert(gltf->images.size() == 6);
@@ -167,6 +205,7 @@ int main(int argc, char **argv) {
   assert(balloonsFit(shortMessage, "monospace", textMetadata["fontSize"]));
   auto denseMetadata = sceneMetadata(qa / "scene.glb")["nodes"].back()["extras"];
   assert(int(denseMetadata["fontSize"]) >= 18);
+  assert(std::abs(float(denseMetadata["referenceDepthMetres"]) - 1.94f) < 1e-5);
   assert(balloonsFit(doc.panels.back(), "monospace", denseMetadata["fontSize"]));
 
   auto frame = gltf->evaluate(0);

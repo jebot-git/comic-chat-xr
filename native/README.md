@@ -144,8 +144,18 @@ pixel-art sampling. Balloon type grows toward 24 logical pixels when the
 measured panel has room, retaining the configured font and falling back toward
 the original size for dense panels so enlarged messages stay within the existing
 balloon band.
-Desktop balloon layout and rendering are unchanged. Headset eye resolution and
+XR font enlargement and raster density do not alter desktop typography. Headset eye resolution and
 window texture density still limit the final angular text detail.
+
+Normal and whisper tails use offset entries and shallow paired curves based on
+`CBWoodringNormal::AddArrow`'s five-percent bow in the original renderer. Tail
+tips stop short of opaque character silhouettes, with a four-pixel clearance;
+thought dots follow the same curved route. Tails compose behind balloon bodies
+and text, and action balloons have no tail. XR balloons sit at a 1.94 m reference
+depth, 6 cm in front of character faces, while their width/height preserve the
+reference-view alignment. This is a native silhouette-aware route, not a port
+of the original complete route-region expert system.
+
 
 
 The window uses DomeD's squeezed side-by-side transport under the explicit

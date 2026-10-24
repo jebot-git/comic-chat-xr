@@ -64,7 +64,7 @@ struct Layout {
   std::vector<Actor> actors;
 };
 struct Rendered {
-  Image panel, balloons;
+  Image panel, balloons, tails;
   Layout layout;
 };
 class Document {

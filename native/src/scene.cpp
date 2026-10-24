@@ -310,12 +310,13 @@ void exportScene(const Panel &panel, Art &art, const fs::path &path,
   }
   // Text bubbles are separate spatial geometry in front of the speakers.
   // Keep the same reference projection while placing balloons just in front.
-  constexpr float balloonDepth = 1.97f;
+  constexpr float balloonDepth = 1.94f;
   auto balloon =
       cutout(rendered.balloons, 2 * balloonDepth, 2 * balloonDepth, .004, 1);
   out.mesh(balloon, out.material(rendered.balloons, true), "Speech balloons",
            {{"role", "balloons"}, {"fontSize", textSize},
-            {"rasterScale", textRasterScale}}, {0, 1.6, -balloonDepth - .002f});
+            {"rasterScale", textRasterScale}, {"referenceDepthMetres", balloonDepth}},
+           {0, 1.6, -balloonDepth - .002f});
   if (!path.parent_path().empty())
     fs::create_directories(path.parent_path());
   out.save(path);
